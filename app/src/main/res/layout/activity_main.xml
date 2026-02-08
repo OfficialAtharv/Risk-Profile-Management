@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <Button
+        android:id="@+id/btnTrip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start Trip" />
+
+    <TextView
+        android:id="@+id/txtSpeed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Speed: 0 km/h"
+        android:textSize="24sp"
+        android:paddingTop="20dp" />
+
+    <SeekBar
+        android:id="@+id/speedSeekBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="120" />
+
+    <TextView
+        android:id="@+id/txtLimit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Speed Limit: 60 km/h"
+        android:paddingTop="20dp" />
+
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Not Started"
+        android:textSize="18sp"
+        android:paddingTop="10dp" />
+
+</LinearLayout>
