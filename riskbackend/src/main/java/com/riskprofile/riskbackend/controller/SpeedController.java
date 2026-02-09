@@ -1,5 +1,8 @@
 package com.riskprofile.riskbackend.controller;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -18,49 +21,56 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/speed")
 public class SpeedController {
 
-    private static final int SPEED_LIMIT = 60; // keep same as Android
+  private static final int SPEED_LIMIT = 60; // keep same as Android
 
-    @PostMapping("/update")
-    public ResponseEntity<String> updateSpeed(@Valid @RequestBody SpeedRequest request) {
+  @PostMapping("/update")
+  public ResponseEntity<String> updateSpeed(@Valid @RequestBody SpeedRequest request) {
 
-        int speed = request.getSpeed();
-        String email = request.getUserEmail();
+    int speed = request.getSpeed();
+    String email = request.getUserEmail();
 
-        System.out.println("🔥 SPEED RECEIVED: " + speed);
+    System.out.println("🔥 SPEED RECEIVED: " + speed);
 
-        if (speed > SPEED_LIMIT) {
-            System.out.println("🚨 OVERSPEED DETECTED → Triggering email");
-            triggerEmail(email, speed);
-        }
-
-        return ResponseEntity.ok("Speed processed");
+    if (speed > SPEED_LIMIT) {
+      System.out.println("🚨 OVERSPEED DETECTED → Triggering email");
+      triggerEmail(email, speed);
     }
 
-    private void triggerEmail(String email, int speed) {
+    return ResponseEntity.ok("Speed processed");
+  }
 
-        RestTemplate restTemplate = new RestTemplate();
+  private void triggerEmail(String email, int speed) {
 
-        String emailServiceUrl = "http://localhost:8080/email/send";
+    RestTemplate restTemplate = new RestTemplate();
+    String emailServiceUrl = "http://localhost:8080/email/send";
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+    // Build request body as Map (safe & clean)
+    Map<String, Object> payload = new HashMap<>();
+    payload.put("to", email);
+    payload.put("subject", "🚨 Risk Alert: Overspeed Detected");
 
-        String payload = """
-            {
-                "to": "%s",
-                "subject": "Risk Alert",
-                "body": "This is an automated alert.\n\nOur system detected that your vehicle crossed the permitted speed limit.\n\nRecorded Speed: %d km/h\n\nImmediate corrective action is advised."
-            }
-            """.formatted(email, speed);
+    payload.put(
+        "body",
+        "Dear User,\n\n" +
+            "This is an automated alert from the Risk Profile Management System.\n\n" +
+            "🚗 Current Speed: " + speed + " km/h\n" +
+            "⚠️ Permitted Limit: 60 km/h\n\n" +
+            "Driving at high speeds increases the risk of accidents.\n" +
+            "Please slow down and drive responsibly.\n\n" +
+            "Stay safe,\n" +
+            "Risk Profile Management Team");
 
-        HttpEntity<String> requestEntity = new HttpEntity<>(payload, headers);
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
 
-        restTemplate.postForEntity(
-                emailServiceUrl,
-                requestEntity,
-                String.class
-        );
+    HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(payload, headers);
 
-        System.out.println("📧 Email request sent to Email Service");
-    }
+    restTemplate.postForEntity(
+        emailServiceUrl,
+        requestEntity,
+        String.class);
+
+    System.out.println("📧 Email request sent successfully");
+  }
+
 }
