@@ -2,6 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orientation="vertical"
     android:padding="20dp">
 
@@ -19,11 +20,12 @@
         android:textSize="24sp"
         android:paddingTop="20dp" />
 
-    <SeekBar
-        android:id="@+id/speedSeekBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:max="120" />
+    <com.github.anastr.speedviewlib.SpeedView
+        android:id="@+id/speedView"
+        android:layout_width="300dp"
+        android:layout_height="300dp"
+        android:layout_gravity="center"
+        android:layout_marginTop="24dp" />
 
     <TextView
         android:id="@+id/txtLimit"
@@ -39,5 +41,16 @@
         android:text="Status: Not Started"
         android:textSize="18sp"
         android:paddingTop="10dp" />
+    <Button
+        android:id="@+id/btnIncrease"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="+ Speed" />
+
+    <Button
+        android:id="@+id/btnDecrease"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="- Speed" />
 
 </LinearLayout>
