@@ -251,7 +251,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                               "km/h",
                               style: TextStyle(
                                 color: Colors.white70,
-                                fontSize: 20,
+                                fontSize: 18,
                               ),
                             ),
                           ],
