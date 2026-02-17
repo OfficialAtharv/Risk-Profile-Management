@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "690941422365",
+    "project_id": "speed-monitor-app",
+    "storage_bucket": "speed-monitor-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690941422365:android:f92d260835442d8e858ff4",
+        "android_client_info": {
+          "package_name": "com.example.speed_monitor_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUunNbHGg3cy1DzCWtbn-K2oFi1qq2UMQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690941422365:android:c4d1f9c1cea57174858ff4",
+        "android_client_info": {
+          "package_name": "novagenx.riskprofile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUunNbHGg3cy1DzCWtbn-K2oFi1qq2UMQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

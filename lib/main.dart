@@ -3,11 +3,25 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import 'package:speed_monitor_flutter/screens/trip_details_screen.dart';
+import 'models/trip_model.dart';
+import 'package:intl/intl.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'services/firestore_service.dart';
+import 'package:speed_monitor_flutter/services/firestore_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 
-void main() {
+
+
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const SpeedMonitorApp());
 }
+
 
 class SpeedMonitorApp extends StatelessWidget {
   const SpeedMonitorApp({super.key});
@@ -22,7 +36,12 @@ class SpeedMonitorApp extends StatelessWidget {
 }
 
 class SpeedMonitorScreen extends StatefulWidget {
-  const SpeedMonitorScreen({super.key});
+  final Function(Trip) onTripCreated;
+
+  const SpeedMonitorScreen({
+    super.key,
+    required this.onTripCreated,});
+
 
   @override
   State<SpeedMonitorScreen> createState() => _SpeedMonitorScreenState();
@@ -33,6 +52,10 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   double _speed = 0.0;
   double _speedLimit = 60;
   bool _alertSent = false;
+  double _totalDistance = 0.0;
+  Position? _lastPosition;
+  Trip? _currentTrip;
+  String? _currentTripId;
 
   StreamSubscription<Position>? _positionStream;
   Future<void> _startTracking() async {
@@ -58,7 +81,23 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         distanceFilter: 1,
       ),
     ).listen((Position position) {
+
       if (position.accuracy > 35) return;
+      if (_isTracking) {
+
+        if (_lastPosition != null) {
+          double distanceInMeters = Geolocator.distanceBetween(
+            _lastPosition!.latitude,
+            _lastPosition!.longitude,
+            position.latitude,
+            position.longitude,
+          );
+
+          _totalDistance += distanceInMeters;
+        }
+
+        _lastPosition = position;
+      }
 
       double speedKmh = position.speed * 3.6;
 
@@ -69,6 +108,16 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       setState(() {
         _speed = speedKmh;
       });
+      // 🔹 Save speed log if trip is active
+      if (_isTracking && _currentTripId != null) {
+        FirestoreService().saveSpeedLog(
+          _currentTripId!,
+          speedKmh,
+          position.latitude,
+          position.longitude,
+        );
+      }
+
 
       if (speedKmh > _speedLimit && !_alertSent) {
         _alertSent = true;
@@ -78,6 +127,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       if (speedKmh < _speedLimit - 5) {
         _alertSent = false;
       }
+
 
     });
   }
@@ -93,6 +143,62 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     _positionStream?.cancel();
     super.dispose();
   }
+  Future<void> _createNewTrip() async {
+    _totalDistance = 0.0;
+    _lastPosition = null;
+
+    Position position = await Geolocator.getCurrentPosition();
+
+    _currentTrip = Trip(
+      startTime: DateTime.now(),
+      startLat: position.latitude,
+      startLng: position.longitude,
+    );
+
+
+    _currentTripId =
+    await FirestoreService().saveTrip(_currentTrip!);
+
+    widget.onTripCreated(_currentTrip!);
+
+    print("Trip Started with ID: $_currentTripId");
+  }
+
+  Future<void> _endCurrentTrip() async {
+    if (_currentTrip == null) return;
+
+    Position position = await Geolocator.getCurrentPosition();
+
+    DateTime endTime = DateTime.now();
+    DateTime startTime = _currentTrip!.startTime;
+
+    Duration difference = endTime.difference(startTime);
+
+    String formattedDuration =
+        "${difference.inHours.toString().padLeft(2, '0')}:"
+        "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
+        "${(difference.inSeconds % 60).toString().padLeft(2, '0')}";
+
+    _currentTrip!.endTrip(
+      endTime: endTime,
+      endLat: position.latitude,
+      endLng: position.longitude,
+      duration: formattedDuration,
+      distance: _totalDistance,
+    );
+    await FirebaseFirestore.instance
+        .collection('trips')
+        .doc(_currentTripId)
+        .update(_currentTrip!.toMap());
+
+    print("Trip updated: $_currentTripId");
+
+
+
+
+    print("Trip Ended");
+  }
+
 
 
   @override
@@ -236,31 +342,35 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             )
                           ],
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              animatedValue.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 60,
-                                fontWeight: FontWeight.bold,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                animatedValue.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 60,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            const Text(
-                              "km/h",
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 18,
+                              const Text(
+                                "km/h",
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 18,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   );
                 },
               ),
+
+
 
 
               const SizedBox(height: 30),
@@ -270,22 +380,26 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 30),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    _StatCard(title: "Distance", value: "0.0 km"),
-                    _StatCard(title: "Time", value: "00:00"),
-                    _StatCard(title: "Max", value: "0 km/h"),
+                  children: [
+                    _StatCard(
+                      title: "Distance",
+                      value: "${(_totalDistance / 1000).toStringAsFixed(2)} km",
+                    ),
+                    const _StatCard(title: "Time", value: "00:00"),
+                    const _StatCard(title: "Max", value: "0 km/h"),
                   ],
                 ),
               ),
 
+
               const Spacer(),
-              ElevatedButton(
-                onPressed: () async {
-                  Position position = await Geolocator.getCurrentPosition();
-                  _sendOverspeedEmail(position);
-                },
-                child: const Text("Test Email"),
-              ),
+              // ElevatedButton(
+              //   onPressed: () async {
+              //     Position position = await Geolocator.getCurrentPosition();
+              //     _sendOverspeedEmail(position);
+              //   },
+              //   child: const Text("Test Email"),
+              // ),
 
               // 🔹 START BUTTON
               Padding(
@@ -297,10 +411,13 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     });
 
                     if (_isTracking) {
+                      _createNewTrip();
                       _startTracking();
                     } else {
+                      _endCurrentTrip();
                       _stopTracking();
                     }
+
                   },
 
                   child: AnimatedContainer(
@@ -418,18 +535,28 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
+  List<Trip> _tripHistory = [];
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = const [
-    SpeedMonitorScreen(),   // Your existing screen
-    TripHistoryScreen(),
-    SettingsScreen(),
-  ];
-
+  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          SpeedMonitorScreen(
+            onTripCreated: (trip) {
+              setState(() {
+                _tripHistory.add(trip);
+                print("Trip added. Count: ${_tripHistory.length}");
+              });
+            },
+          ),
+          const TripHistoryScreen(),
+          const SettingsScreen(),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: const Color(0xFF141E30),
         selectedItemColor: Colors.blueAccent,
@@ -457,6 +584,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
+
 }
 
 ////////////////////////////////////////////////////////////
@@ -468,17 +596,160 @@ class TripHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF141E30),
-      body: Center(
-        child: Text(
-          "Trip History Coming Soon 🚗",
-          style: TextStyle(color: Colors.white70, fontSize: 18),
-        ),
+    final firestoreService = FirestoreService();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF141E30),
+      body: StreamBuilder<List<Trip>>(
+        stream: firestoreService.getTrips(),
+        builder: (context, snapshot) {
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text(
+                "No Trips Yet 🚗",
+                style: TextStyle(color: Colors.white70, fontSize: 18),
+              ),
+            );
+          }
+
+          final trips = snapshot.data!;
+
+          return ListView.builder(
+            itemCount: trips.length,
+            itemBuilder: (context, index) {
+              final trip = trips[index];
+
+              return FutureBuilder<List<Placemark>>(
+                future: placemarkFromCoordinates(
+                    trip.startLat, trip.startLng),
+                builder: (context, locationSnapshot) {
+
+                  String location = "Loading location...";
+
+                  if (locationSnapshot.hasData &&
+                      locationSnapshot.data!.isNotEmpty) {
+                    final place = locationSnapshot.data!.first;
+                    location =
+                    "${place.locality}, ${place.administrativeArea}";
+                  }
+
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TripDetailsScreen(trip: trip),
+                        ),
+                      );
+                    },
+
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF1E3C72),
+                            Color(0xFF2A5298),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.blueAccent.withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+
+                          /// DATE
+                          Text(
+                            DateFormat('dd MMM yyyy • hh:mm a').format(trip.startTime),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          /// DISTANCE BIG
+                          Text(
+                            "${((trip.distance ?? 0) / 1000).toStringAsFixed(2)} km",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          Row(
+                            children: [
+
+                              Row(
+                                children: [
+                                  const Icon(Icons.timer, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    trip.duration ?? "Running...",
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              const Spacer(),
+
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on,
+                                      color: Colors.white70, size: 18),
+                                  const SizedBox(width: 6),
+                                  SizedBox(
+                                    width: 120,
+                                    child: Text(
+                                      location,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
+
+
 
 ////////////////////////////////////////////////////////////
 /// SETTINGS SCREEN
@@ -494,10 +765,11 @@ class SettingsScreen extends StatelessWidget {
       body: Center(
         child: Text(
           "Settings Coming Soon ⚙",
-          style: TextStyle(color: Colors.white70, fontSize: 18),
+          style: TextStyle(color: Colors.white70, fontSize: 20),
         ),
       ),
     );
   }
 }
+
 
