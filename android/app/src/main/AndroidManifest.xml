@@ -7,9 +7,6 @@
         android:label="speed_monitor_flutter"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-
-
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
