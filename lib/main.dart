@@ -11,9 +11,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'services/firestore_service.dart';
 import 'package:speed_monitor_flutter/services/firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 
 
 
@@ -59,9 +56,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   Position? _lastPosition;
   Trip? _currentTrip;
   String? _currentTripId;
-  final MapController _mapController = MapController();
-  int _overspeedCount = 0;
-  final FlutterTts _flutterTts = FlutterTts();
 
   StreamSubscription<Position>? _positionStream;
   Future<void> _startTracking() async {
@@ -103,11 +97,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         }
 
         _lastPosition = position;
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          17,
-        );
-
       }
 
       double speedKmh = position.speed * 3.6;
@@ -130,19 +119,9 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       }
 
 
-
       if (speedKmh > _speedLimit && !_alertSent) {
         _alertSent = true;
-        _overspeedCount++;
-
-        print("Overspeed Count: $_overspeedCount");
-
         _sendOverspeedEmail(position);
-
-        // 🔹 If crossed more than 5 times
-        if (_overspeedCount >= 5) {
-          _triggerContinuousOverspeedWarning();
-        }
       }
 
       if (speedKmh < _speedLimit - 5) {
@@ -263,7 +242,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
           child: Column(
             children: [
 
@@ -283,46 +261,28 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               const SizedBox(height: 20),
 
               // 🔹 MAP PLACEHOLDER
-              SizedBox(
-                height: 200,
-                child: ClipRRect(
+              Container(
+                height: 160,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
-                  child: FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: LatLng(18.5204, 73.8567), // default Pune
-                      initialZoom: 16,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.speedmonitor',
-                      ),
-                      MarkerLayer(
-                        markers: _lastPosition == null
-                            ? []
-                            : [
-                          Marker(
-                            width: 40,
-                            height: 40,
-                            point: LatLng(
-                              _lastPosition!.latitude,
-                              _lastPosition!.longitude,
-                            ),
-                            child: const Icon(
-                              Icons.my_location,
-                              color: Colors.blueAccent,
-                              size: 35,
-                            ),
-                          ),
-                        ],
-                      ),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withOpacity(0.4),
+                      Colors.black.withOpacity(0.2),
                     ],
                   ),
                 ),
+                child: const Center(
+                  child: Text(
+                    "Live Map (Coming Soon)",
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
               ),
-
 
               const SizedBox(height: 20),
 
@@ -460,7 +420,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               ),
 
 
-
+              const Spacer(),
               // ElevatedButton(
               //   onPressed: () async {
               //     Position position = await Geolocator.getCurrentPosition();
@@ -468,58 +428,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               //   },
               //   child: const Text("Test Email"),
               // ),
-              // 🔹 TEST SPEED BUTTON (TEMPORARY)
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _speed += 10;
-                  });
-
-                  if (_speed > _speedLimit && !_alertSent) {
-                    _alertSent = true;
-                    _overspeedCount++;
-
-                    print("Overspeed Count: $_overspeedCount");
-
-                    _sendOverspeedEmail(
-                      Position(
-                        longitude: _lastPosition?.longitude ?? 0,
-                        latitude: _lastPosition?.latitude ?? 0,
-                        timestamp: DateTime.now(),
-                        accuracy: 1,
-                        altitude: 0,
-                        altitudeAccuracy: 1,
-                        heading: 0,
-                        headingAccuracy: 1,
-                        speed: _speed / 3.6,
-                        speedAccuracy: 1,
-                      ),
-                    );
-
-                    if (_overspeedCount >= 5) {
-                      _triggerContinuousOverspeedWarning();
-                    }
-                  }
-                },
-                child: const Text("Increase Speed (Test)"),
-              ),
-
-
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _speed -= 20;
-                    if (_speed < 0) _speed = 0;
-                  });
-
-                  if (_speed < _speedLimit - 5) {
-                    _alertSent = false;
-                  }
-                },
-                child: const Text("Decrease Speed (Test)"),
-              ),
-
 
               // 🔹 START BUTTON
               Padding(
@@ -575,7 +483,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
             ],
           ),
         ),
-        ),
       ),
     );
   }
@@ -608,20 +515,8 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
       print('Email failed: $e');
     }
   }
-  Future<void> _triggerContinuousOverspeedWarning() async {
-    print("Continuous Overspeed Detected!");
-
-    await _flutterTts.speak(
-      "Please check your speed. You are crossing the speed limit continuously.",
-    );
-
-    _overspeedCount = 0;
-  }
-
 
 }
-
-
 
 // 🔹 Reusable Stat Card
 class _StatCard extends StatelessWidget {
@@ -809,6 +704,7 @@ class TripHistoryScreen extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                              const Spacer(),
 
                         const SizedBox(height: 10),
 
