@@ -42,24 +42,28 @@ class TripDetailsScreen extends StatelessWidget {
             ),
 
             _detailTile(
+              icon: Icons.location_on,
+              label: "Start Location",
+              value: trip.startLocation ?? "Unknown Location",
+            ),
+
+
+            _detailTile(
+              icon: Icons.flag,
+              label: "End Location",
+              value: trip.endLocation ?? "Unknown Location",
+            ),
+            _detailTile(
               icon: Icons.access_time,
               label: "Duration",
               value: trip.duration ?? "N/A",
             ),
-
-            _detailTile(
-              icon: Icons.my_location,
-              label: "Start Coordinates",
-              value:
-              "${trip.startLat}, ${trip.startLng}",
-            ),
-
-            _detailTile(
-              icon: Icons.flag,
-              label: "End Coordinates",
-              value:
-              "${trip.endLat ?? '-'}, ${trip.endLng ?? '-'}",
-            ),
+            // _detailTile(
+            //   icon: Icons.flag,
+            //   label: "End Coordinates",
+            //   value:
+            //   "${trip.endLat ?? '-'}, ${trip.endLng ?? '-'}",
+            // ),
           ],
         ),
       ),

@@ -170,11 +170,27 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     Position position = await Geolocator.getCurrentPosition();
 
+    List<Placemark> placemarks =
+    await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude);
+
+    Placemark place = placemarks.first;
+
+    String area = place.subLocality ?? '';
+    String city = place.locality ?? '';
+
+    String startLocationName =
+    area.isNotEmpty ? "$area, $city" : city;
+
     _currentTrip = Trip(
       startTime: DateTime.now(),
       startLat: position.latitude,
       startLng: position.longitude,
+      startLocation: startLocationName,
     );
+
+    print("START LOCATION: $startLocationName");
 
 
     _currentTripId =
@@ -199,6 +215,20 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         "${difference.inHours.toString().padLeft(2, '0')}:"
         "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
         "${(difference.inSeconds % 60).toString().padLeft(2, '0')}";
+    List<Placemark> placemarks =
+    await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude);
+
+    Placemark place = placemarks.first;
+
+    String area = place.subLocality ?? '';
+    String city = place.locality ?? '';
+
+    String endLocationName =
+    area.isNotEmpty ? "$area, $city" : city;
+    print("END LOCATION: $endLocationName");
+
 
     _currentTrip!.endTrip(
       endTime: endTime,
@@ -206,17 +236,15 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       endLng: position.longitude,
       duration: formattedDuration,
       distance: _totalDistance,
+      endLocation: endLocationName,
     );
+
     await FirebaseFirestore.instance
         .collection('trips')
         .doc(_currentTripId)
         .update(_currentTrip!.toMap());
 
     print("Trip updated: $_currentTripId");
-
-
-
-
     print("Trip Ended");
   }
 
@@ -728,124 +756,85 @@ class TripHistoryScreen extends StatelessWidget {
 
           return ListView.builder(
             itemCount: trips.length,
-            itemBuilder: (context, index) {
-              final trip = trips[index];
+              itemBuilder: (context, index) {
+                final trip = trips[index];
 
-              return FutureBuilder<List<Placemark>>(
-                future: placemarkFromCoordinates(
-                    trip.startLat, trip.startLng),
-                builder: (context, locationSnapshot) {
+                String location =
+                    trip.startLocation ?? "Unknown Location";
 
-                  String location = "Loading location...";
-
-                  if (locationSnapshot.hasData &&
-                      locationSnapshot.data!.isNotEmpty) {
-                    final place = locationSnapshot.data!.first;
-                    location =
-                    "${place.locality}, ${place.administrativeArea}";
-                  }
-
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => TripDetailsScreen(trip: trip),
-                        ),
-                      );
-                    },
-
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF1E3C72),
-                            Color(0xFF2A5298),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blueAccent.withOpacity(0.3),
-                            blurRadius: 15,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            TripDetailsScreen(trip: trip),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-
-                          /// DATE
-                          Text(
-                            DateFormat('dd MMM yyyy • hh:mm a').format(trip.startTime),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          /// DISTANCE BIG
-                          Text(
-                            "${((trip.distance ?? 0) / 1000).toStringAsFixed(2)} km",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          Row(
-                            children: [
-
-                              Row(
-                                children: [
-                                  const Icon(Icons.timer, color: Colors.white70, size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    trip.duration ?? "Running...",
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on,
-                                      color: Colors.white70, size: 18),
-                                  const SizedBox(width: 6),
-                                  SizedBox(
-                                    width: 120,
-                                    child: Text(
-                                      location,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF1E3C72),
+                          Color(0xFF2A5298),
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  );
-                },
-              );
-            },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+
+                        Text(
+                          DateFormat('dd MMM yyyy • hh:mm a')
+                              .format(trip.startTime),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        Text(
+                          "${((trip.distance ?? 0) / 1000).toStringAsFixed(2)} km",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on,
+                                color: Colors.white70, size: 18),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 150,
+                              child: Text(
+                                location,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
           );
         },
       ),
