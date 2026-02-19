@@ -129,12 +129,13 @@ Android Gradle Plugin
 Kotlin version
 
 Add analytics dashboard
+Audioplayers
+
+Flutter TTS
 
 📸 Screenshots
 <img width="720" height="1600" alt="image" src="https://github.com/user-attachments/assets/4d45ec56-dcf4-4ec4-8588-10eb2fa9db36" />
 <img width="720" height="1600" alt="image" src="https://github.com/user-attachments/assets/aec96a7a-5aed-432a-bfcd-d374411f29ca" />
 <img width="720" height="1600" alt="image" src="https://github.com/user-attachments/assets/258f7163-0789-420c-b69e-e48d80bd4bfb" />
 
-Audioplayers
 
-Flutter TTS
