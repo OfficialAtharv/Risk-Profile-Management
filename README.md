@@ -102,23 +102,6 @@ Geocoding
 
 Mailer
 
-📂 Project Structure
-lib/
- ├── main.dart
- ├── auth/
- │     ├── login_screen.dart
- │     ├── signup_screen.dart
- │     └── auth_wrapper.dart
- ├── screens/
- │     ├── main_screen.dart
- │     ├── speed_monitor_screen.dart
- │     ├── trip_history_screen.dart
- │     └── settings_screen.dart
- └── services/
-       ├── speed_service.dart
-       ├── email_service.dart
-       └── trip_service.dart
-
 🎯 Current Status
 
 ✔ Authentication fully working
