@@ -42,8 +42,6 @@ dependencies:
   intl: ^0.18.1
   firebase_core: ^4.4.0
   cloud_firestore: ^6.1.2
-<<<<<<< HEAD
-=======
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   flutter_tts: ^3.8.5
@@ -52,7 +50,6 @@ dependencies:
 
 
 
->>>>>>> c0a3057 (new updates on the application - this version is comming with the User specific ID, DB storage, and theme building features)
 
 
 dev_dependencies:
