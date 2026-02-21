@@ -1,9 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:speed_monitor_flutter/screens/trip_details_screen.dart';
+import 'auth/auth_wrapper.dart';
 import 'models/trip_model.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
@@ -11,26 +13,54 @@ import 'package:firebase_core/firebase_core.dart';
 import 'services/firestore_service.dart';
 import 'package:speed_monitor_flutter/services/firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+<<<<<<< HEAD
 
 
 
 
 
+=======
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import '../screens/home_screen.dart';
+import 'screens/settings_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+>>>>>>> c0a3057 (new updates on the application - this version is comming with the User specific ID, DB storage, and theme building features)
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  final prefs = await SharedPreferences.getInstance();
+  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
+
+  themeNotifier.value =
+  isDarkMode ? ThemeMode.dark : ThemeMode.light;
+
   runApp(const SpeedMonitorApp());
 }
 
+final ValueNotifier<ThemeMode> themeNotifier =
+ValueNotifier(ThemeMode.light);
 
 class SpeedMonitorApp extends StatelessWidget {
   const SpeedMonitorApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: MainScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentMode, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          themeMode: currentMode,
+          theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          home: const AuthWrapper(),
+        );
+      },
     );
   }
 }
@@ -171,7 +201,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     print("START LOCATION: $startLocationName");
 
-
+    print("Current user: ${FirebaseAuth.instance.currentUser?.uid}");
     _currentTripId =
     await FirestoreService().saveTrip(_currentTrip!);
 
@@ -181,7 +211,13 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   }
 
   Future<void> _endCurrentTrip() async {
-    if (_currentTrip == null) return;
+    if (_currentTrip == null || _currentTripId == null) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User not logged in");
+      return;
+    }
 
     Position position = await Geolocator.getCurrentPosition();
 
@@ -194,6 +230,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         "${difference.inHours.toString().padLeft(2, '0')}:"
         "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
         "${(difference.inSeconds % 60).toString().padLeft(2, '0')}";
+
     List<Placemark> placemarks =
     await placemarkFromCoordinates(
         position.latitude,
@@ -206,8 +243,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     String endLocationName =
     area.isNotEmpty ? "$area, $city" : city;
-    print("END LOCATION: $endLocationName");
-
 
     _currentTrip!.endTrip(
       endTime: endTime,
@@ -219,12 +254,13 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     );
 
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
         .collection('trips')
         .doc(_currentTripId)
         .update(_currentTrip!.toMap());
 
-    print("Trip updated: $_currentTripId");
-    print("Trip Ended");
+    print("Trip updated successfully: $_currentTripId");
   }
 
 
@@ -234,9 +270,11 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF141E30), Color(0xFF243B55)],
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? [const Color(0xFF141E30), const Color(0xFF243B55)]
+                : [Colors.white, Colors.grey.shade200],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -248,10 +286,10 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               const SizedBox(height: 10),
 
               // 🔹 APP TITLE
-              const Text(
+              Text(
                 "Speed Monitor",
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                   fontSize: 24,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.2,
@@ -295,14 +333,19 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     // Speed Limit Badge
                     Container(
                       padding: const EdgeInsets.all(14),
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.red,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: Theme.of(context).brightness == Brightness.dark
+                              ? [const Color(0xFF141E30), const Color(0xFF243B55)]
+                              : [Colors.white, Colors.grey.shade200],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
                       ),
-                      child: const Text(
+                      child: Text(
                         "60",
                         style: TextStyle(
-                          color: Colors.white,
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -311,12 +354,18 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
                     // GPS Status
                     Row(
-                      children: const [
-                        Icon(Icons.gps_fixed, color: Colors.green),
-                        SizedBox(width: 6),
+                      children: [
+                        const Icon(Icons.gps_fixed, color: Colors.green),
+                        const SizedBox(width: 6),
                         Text(
                           "GPS Strong",
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.color
+                                ?.withOpacity(0.7),
+                          ),
                         ),
                       ],
                     ),
@@ -376,16 +425,20 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             children: [
                               Text(
                                 animatedValue.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: Theme.of(context).textTheme.bodyLarge?.color,
                                   fontSize: 60,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 "km/h",
                                 style: TextStyle(
-                                  color: Colors.white70,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.color
+                                      ?.withOpacity(0.7),
                                   fontSize: 18,
                                 ),
                               ),
@@ -520,8 +573,6 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
 
 // 🔹 Reusable Stat Card
 class _StatCard extends StatelessWidget {
-
-
   final String title;
   final String value;
 
@@ -533,8 +584,8 @@ class _StatCard extends StatelessWidget {
       children: [
         Text(
           value,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).textTheme.bodyLarge?.color,
             fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
@@ -542,8 +593,12 @@ class _StatCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
-            color: Colors.white54,
+          style: TextStyle(
+            color: Theme.of(context)
+                .textTheme
+                .bodyLarge
+                ?.color
+                ?.withOpacity(0.6),
             fontSize: 12,
           ),
         ),
@@ -586,9 +641,13 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: const Color(0xFF141E30),
+
         selectedItemColor: Colors.blueAccent,
-        unselectedItemColor: Colors.white54,
+        unselectedItemColor: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.color
+            ?.withOpacity(0.6),
         currentIndex: _selectedIndex,
         onTap: (index) {
           setState(() {
@@ -627,7 +686,7 @@ class TripHistoryScreen extends StatelessWidget {
     final firestoreService = FirestoreService();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF141E30),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: StreamBuilder<List<Trip>>(
         stream: firestoreService.getTrips(),
         builder: (context, snapshot) {
@@ -639,10 +698,14 @@ class TripHistoryScreen extends StatelessWidget {
           }
 
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
+            return Center(
               child: Text(
                 "No Trips Yet 🚗",
-                style: TextStyle(color: Colors.white70, fontSize: 18),
+                style: TextStyle(color: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.color
+                    ?.withOpacity(0.7), fontSize: 18),
               ),
             );
           }
@@ -688,8 +751,12 @@ class TripHistoryScreen extends StatelessWidget {
                         Text(
                           DateFormat('dd MMM yyyy • hh:mm a')
                               .format(trip.startTime),
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.color
+                                ?.withOpacity(0.7),
                             fontSize: 13,
                           ),
                         ),
@@ -710,16 +777,24 @@ class TripHistoryScreen extends StatelessWidget {
 
                         Row(
                           children: [
-                            const Icon(Icons.location_on,
-                                color: Colors.white70, size: 18),
+                            Icon(Icons.location_on,
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.color
+                                    ?.withOpacity(0.7), size: 18),
                             const SizedBox(width: 6),
                             SizedBox(
                               width: 150,
                               child: Text(
                                 location,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white70,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.color
+                                      ?.withOpacity(0.7),
                                 ),
                               ),
                             ),
@@ -740,25 +815,7 @@ class TripHistoryScreen extends StatelessWidget {
 
 
 
-////////////////////////////////////////////////////////////
-/// SETTINGS SCREEN
-////////////////////////////////////////////////////////////
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF141E30),
-      body: Center(
-        child: Text(
-          "Settings Coming Soon ⚙",
-          style: TextStyle(color: Colors.white70, fontSize: 20),
-        ),
-      ),
-    );
-  }
-}
 
 
