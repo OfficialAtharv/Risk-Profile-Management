@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:speed_monitor_flutter/screens/trip_details_screen.dart';
@@ -21,6 +22,7 @@ import 'screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -138,7 +140,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       setState(() {
         _speed = speedKmh;
       });
-      // 🔹 Save speed log if trip is active
+
       if (_isTracking && _currentTripId != null) {
         FirestoreService().saveSpeedLog(
           _currentTripId!,
@@ -148,17 +150,18 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         );
       }
 
-
-
       if (speedKmh > _speedLimit && !_alertSent) {
         _alertSent = true;
         _overspeedCount++;
 
         print("Overspeed Count: $_overspeedCount");
 
+        // ✅ SEND EMAIL
         _sendOverspeedEmail(position);
 
-        // 🔹 If crossed more than 5 times
+        // ✅ SEND TO N8N WEBHOOK
+        _sendOverspeedToWebhook(position);
+
         if (_overspeedCount >= 5) {
           _triggerContinuousOverspeedWarning();
         }
@@ -195,13 +198,10 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         position.longitude);
 
     Placemark place = placemarks.first;
-
     String area = place.subLocality ?? '';
     String city = place.locality ?? '';
-
     String startLocationName =
     area.isNotEmpty ? "$area, $city" : city;
-
     _currentTrip = Trip(
       startTime: DateTime.now(),
       startLat: position.latitude,
@@ -210,19 +210,15 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     );
 
     print("START LOCATION: $startLocationName");
-
     print("Current user: ${FirebaseAuth.instance.currentUser?.uid}");
     _currentTripId =
     await FirestoreService().saveTrip(_currentTrip!);
-
     widget.onTripCreated(_currentTrip!);
-
     print("Trip Started with ID: $_currentTripId");
   }
 
   Future<void> _endCurrentTrip() async {
     if (_currentTrip == null || _currentTripId == null) return;
-
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User not logged in");
@@ -230,12 +226,9 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     }
 
     Position position = await Geolocator.getCurrentPosition();
-
     DateTime endTime = DateTime.now();
     DateTime startTime = _currentTrip!.startTime;
-
     Duration difference = endTime.difference(startTime);
-
     String formattedDuration =
         "${difference.inHours.toString().padLeft(2, '0')}:"
         "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
@@ -247,10 +240,8 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         position.longitude);
 
     Placemark place = placemarks.first;
-
     String area = place.subLocality ?? '';
     String city = place.locality ?? '';
-
     String endLocationName =
     area.isNotEmpty ? "$area, $city" : city;
 
@@ -272,8 +263,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     print("Trip updated successfully: $_currentTripId");
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -632,15 +621,13 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       ..recipients.add('28.atharvkulkarni@gmail.com')
       ..subject = '🚨 Overspeed Alert!'
       ..text = '''
-Overspeed detected!
-
-Speed: ${_speed.toStringAsFixed(1)} km/h
-Limit: $_speedLimit km/h
-Latitude: ${position.latitude}
-Longitude: ${position.longitude}
-
-Google Maps:
-https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}
+            Overspeed detected!
+            Speed: ${_speed.toStringAsFixed(1)} km/h
+            Limit: $_speedLimit km/h
+            Latitude: ${position.latitude}
+            Longitude: ${position.longitude}
+            Google Maps:
+            https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}
 ''';
 
     try {
@@ -648,6 +635,31 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
       print('Email sent');
     } catch (e) {
       print('Email failed: $e');
+    }
+  }
+
+  Future<void> _sendOverspeedToWebhook(Position position) async {
+    final url = Uri.parse(
+      "https://atharvnova.app.n8n.cloud/webhook/overspeed-alert",
+    );
+
+    try {
+      await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "userId": FirebaseAuth.instance.currentUser?.uid ?? "unknown",
+          "overspeedCount": _overspeedCount,
+          "speed": _speed,
+          "limit": _speedLimit,
+          "latitude": position.latitude,
+          "longitude": position.longitude,
+        }),
+      );
+
+      print("Webhook sent successfully");
+    } catch (e) {
+      print("Webhook error: $e");
     }
   }
   Future<void> _triggerContinuousOverspeedWarning() async {
