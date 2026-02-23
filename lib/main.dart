@@ -83,7 +83,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   final MapController _mapController = MapController();
   int _overspeedCount = 0;
   final FlutterTts _flutterTts = FlutterTts();
-
+  bool _isSpeaking = false;
 
   StreamSubscription<Position>? _positionStream;
   Future<void> _startTracking() async {
@@ -153,7 +153,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       }
 
       if (speedKmh > _speedLimit && !_alertSent) {
-        _alertSent = true;
+
         _overspeedCount++;
 
         print("Overspeed Count: $_overspeedCount");
@@ -276,13 +276,19 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
   Future<void> _endCurrentTrip() async {
     if (_currentTrip == null || _currentTripId == null) return;
+    if (_lastPosition == null) {
+      print("No last position available");
+      return;
+    }
+
+    Position position = _lastPosition!;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User not logged in");
       return;
     }
 
-    Position position = await Geolocator.getCurrentPosition();
+
     DateTime endTime = DateTime.now();
     DateTime startTime = _currentTrip!.startTime;
     Duration difference = endTime.difference(startTime);
@@ -321,6 +327,17 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     print("Trip updated successfully: $_currentTripId");
   }
 
+  Future<void> _initTTS() async {
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.setPitch(1.0);
+  }
+  @override
+  void initState() {
+    super.initState();
+    _initTTS();
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -575,14 +592,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
 
 
-              // ElevatedButton(
-              //   onPressed: () async {
-              //     Position position = await Geolocator.getCurrentPosition();
-              //     _sendOverspeedEmail(position);
-              //   },
-              //   child: const Text("Test Email"),
-              // ),
-              // 🔹 TEST SPEED BUTTON (TEMPORARY)
+
               ElevatedButton(
                 onPressed: () {
                   setState(() {
@@ -594,6 +604,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     _overspeedCount++;
 
                     print("Overspeed Count: $_overspeedCount");
+
 
                     _sendOverspeedEmail(
                       Position(
@@ -746,16 +757,21 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     }
   }
   Future<void> _triggerContinuousOverspeedWarning() async {
-    print("Continuous Overspeed Detected!");
+    _isSpeaking = true;
+
+    print("🔥 VOICE ALERT TRIGGERED 🔥");
+
+    await _flutterTts.stop();
 
     await _flutterTts.speak(
-      "Please check your speed. You are crossing the speed limit continuously.",
+      "Warning. You are continuously exceeding the speed limit.",
     );
 
+    await Future.delayed(const Duration(seconds: 3));
+
     _overspeedCount = 0;
+    _isSpeaking = false;
   }
-
-
 }
 
 
