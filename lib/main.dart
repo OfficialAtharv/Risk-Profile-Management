@@ -83,6 +83,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   final MapController _mapController = MapController();
   int _overspeedCount = 0;
   final FlutterTts _flutterTts = FlutterTts();
+  bool _isSpeaking = false;
 
   StreamSubscription<Position>? _positionStream;
   Future<void> _startTracking() async {
@@ -124,6 +125,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         }
 
         _lastPosition = position;
+        _fetchSpeedLimit(position.latitude, position.longitude);
         _mapController.move(
           LatLng(position.latitude, position.longitude),
           17,
@@ -151,7 +153,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       }
 
       if (speedKmh > _speedLimit && !_alertSent) {
-        _alertSent = true;
+
         _overspeedCount++;
 
         print("Overspeed Count: $_overspeedCount");
@@ -174,7 +176,61 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     });
   }
+  DateTime? _lastSpeedLimitFetch;
 
+  Future<void> _fetchSpeedLimit(double lat, double lon) async {
+
+    // Avoid calling too frequently
+    if (_lastSpeedLimitFetch != null &&
+        DateTime.now().difference(_lastSpeedLimitFetch!).inSeconds < 30) {
+      return;
+    }
+    print("Fetching speed for: $lat, $lon");
+    _lastSpeedLimitFetch = DateTime.now();
+
+    final query = """
+  [out:json];
+  way(around:50,$lat,$lon)["highway"];
+  out tags;
+  """;
+
+    try {
+      final response = await http.post(
+        Uri.parse("https://overpass-api.de/api/interpreter"),
+        body: query,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data["elements"] != null && data["elements"].isNotEmpty) {
+
+          for (var element in data["elements"]) {
+            final tags = element["tags"];
+            print("Road Tags: $tags");
+            if (tags != null && tags["maxspeed"] != null) {
+              String raw = tags["maxspeed"].toString();
+              raw = raw.replaceAll(RegExp(r'[^0-9]'), '');
+
+              double? parsed = double.tryParse(raw);
+
+              if (parsed != null) {
+                setState(() {
+                  _speedLimit = parsed;
+                });
+
+
+                print("Updated Speed Limit: $_speedLimit");
+                return;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print("Speed limit fetch error: $e");
+    }
+  }
   void _stopTracking() {
     _positionStream?.cancel();
     setState(() {
@@ -191,6 +247,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     _lastPosition = null;
 
     Position position = await Geolocator.getCurrentPosition();
+    _fetchSpeedLimit(position.latitude, position.longitude);
 
     List<Placemark> placemarks =
     await placemarkFromCoordinates(
@@ -219,13 +276,19 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
   Future<void> _endCurrentTrip() async {
     if (_currentTrip == null || _currentTripId == null) return;
+    if (_lastPosition == null) {
+      print("No last position available");
+      return;
+    }
+
+    Position position = _lastPosition!;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User not logged in");
       return;
     }
 
-    Position position = await Geolocator.getCurrentPosition();
+
     DateTime endTime = DateTime.now();
     DateTime startTime = _currentTrip!.startTime;
     Duration difference = endTime.difference(startTime);
@@ -264,6 +327,17 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     print("Trip updated successfully: $_currentTripId");
   }
 
+  Future<void> _initTTS() async {
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.setPitch(1.0);
+  }
+  @override
+  void initState() {
+    super.initState();
+    _initTTS();
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -349,24 +423,50 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Speed Limit Badge
-                    Container(
-                      padding: const EdgeInsets.all(14),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: 70,
+                      height: 70,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: Theme.of(context).brightness == Brightness.dark
-                              ? [const Color(0xFF141E30), const Color(0xFF243B55)]
-                              : [Colors.white, Colors.grey.shade200],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        border: Border.all(
+                          color: _speed > _speedLimit
+                              ? Colors.redAccent
+                              : Colors.red,
+                          width: _speed > _speedLimit ? 5 : 3,
                         ),
+                        boxShadow: _speed > _speedLimit
+                            ? [
+                          BoxShadow(
+                            color: Colors.redAccent.withOpacity(0.6),
+                            blurRadius: 20,
+                            spreadRadius: 3,
+                          )
+                        ]
+                            : [],
                       ),
-                      child: Text(
-                        "60",
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _speedLimit.toStringAsFixed(0),
+                            style: TextStyle(
+                              color: _speed > _speedLimit
+                                  ? Colors.redAccent
+                                  : Colors.black,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            "km/h",
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -492,14 +592,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
 
 
-              // ElevatedButton(
-              //   onPressed: () async {
-              //     Position position = await Geolocator.getCurrentPosition();
-              //     _sendOverspeedEmail(position);
-              //   },
-              //   child: const Text("Test Email"),
-              // ),
-              // 🔹 TEST SPEED BUTTON (TEMPORARY)
+
               ElevatedButton(
                 onPressed: () {
                   setState(() {
@@ -511,6 +604,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     _overspeedCount++;
 
                     print("Overspeed Count: $_overspeedCount");
+
 
                     _sendOverspeedEmail(
                       Position(
@@ -663,16 +757,21 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     }
   }
   Future<void> _triggerContinuousOverspeedWarning() async {
-    print("Continuous Overspeed Detected!");
+    _isSpeaking = true;
+
+    print("🔥 VOICE ALERT TRIGGERED 🔥");
+
+    await _flutterTts.stop();
 
     await _flutterTts.speak(
-      "Please check your speed. You are crossing the speed limit continuously.",
+      "Warning. You are continuously exceeding the speed limit.",
     );
 
+    await Future.delayed(const Duration(seconds: 3));
+
     _overspeedCount = 0;
+    _isSpeaking = false;
   }
-
-
 }
 
 
