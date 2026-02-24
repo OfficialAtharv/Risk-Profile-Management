@@ -152,21 +152,30 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         );
       }
 
-      if (speedKmh > _speedLimit && !_alertSent) {
+      if (speedKmh > _speedLimit) {
+
+        if (!_alertSent) {
+          _alertSent = true;
+          _sendOverspeedEmail(position);
+          _sendOverspeedToWebhook(position);
+        }
 
         _overspeedCount++;
 
         print("Overspeed Count: $_overspeedCount");
 
-        // ✅ SEND EMAIL
-        _sendOverspeedEmail(position);
-
-        // ✅ SEND TO N8N WEBHOOK
-        _sendOverspeedToWebhook(position);
-
-        if (_overspeedCount >= 5) {
+        if (_overspeedCount >= 5 && !_isSpeaking) {
           _triggerContinuousOverspeedWarning();
         }
+
+      } else {
+
+        if (_alertSent) {
+          print("Speed normalized. Resetting.");
+        }
+
+        _alertSent = false;
+        _overspeedCount = 0;
       }
 
       if (speedKmh < _speedLimit - 5) {
@@ -332,11 +341,28 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     await _flutterTts.setSpeechRate(0.5);
     await _flutterTts.setVolume(1.0);
     await _flutterTts.setPitch(1.0);
+
+    await _flutterTts.awaitSpeakCompletion(true);
+    await _flutterTts.setSharedInstance(true);
+
+    // Android reliability
+    await _flutterTts.setQueueMode(1);
   }
   @override
   void initState() {
     super.initState();
     _initTTS();
+
+    _flutterTts.setCompletionHandler(() {
+      print("Speech Completed");
+      _isSpeaking = false;
+      _overspeedCount = 0;
+    });
+
+    _flutterTts.setErrorHandler((msg) {
+      print("TTS Error: $msg");
+      _isSpeaking = false;
+    });
   }
   @override
   Widget build(BuildContext context) {
@@ -599,7 +625,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     _speed += 10;
                   });
 
-                  if (_speed > _speedLimit && !_alertSent) {
+                  if (_speed > _speedLimit){
                     _alertSent = true;
                     _overspeedCount++;
 
@@ -757,6 +783,8 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     }
   }
   Future<void> _triggerContinuousOverspeedWarning() async {
+    if (_isSpeaking) return;
+
     _isSpeaking = true;
 
     print("🔥 VOICE ALERT TRIGGERED 🔥");
@@ -767,10 +795,10 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       "Warning. You are continuously exceeding the speed limit.",
     );
 
-    await Future.delayed(const Duration(seconds: 3));
-
-    _overspeedCount = 0;
-    _isSpeaking = false;
+    // _flutterTts.setCompletionHandler(() {
+    //   _isSpeaking = false;
+    //   _overspeedCount = 0;
+    // });
   }
 }
 

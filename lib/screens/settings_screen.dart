@@ -11,10 +11,33 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+
+  bool _appNotificationEnabled = true;
+  bool _callingAlertEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    setState(() {
+      _appNotificationEnabled =
+          prefs.getBool('appNotification') ?? true;
+
+      _callingAlertEnabled =
+          prefs.getBool('callingAlert') ?? true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color;
+    final textColor =
+        Theme.of(context).textTheme.bodyLarge?.color;
 
     return Scaffold(
       appBar: AppBar(
@@ -25,7 +48,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            /// User Email Display
+
+            /// User Email
             Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
@@ -43,9 +67,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 30),
 
-            /// 🌗 Theme Toggle
+            /// App Notification Toggle
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "App Notifications",
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 16,
+                  ),
+                ),
+                Switch(
+                  value: _appNotificationEnabled,
+                  onChanged: (value) async {
+                    final prefs =
+                    await SharedPreferences.getInstance();
+                    await prefs.setBool(
+                        'appNotification', value);
+
+                    setState(() {
+                      _appNotificationEnabled = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            /// Calling Alert Toggle
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Calling Alert",
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 16,
+                  ),
+                ),
+                Switch(
+                  value: _callingAlertEnabled,
+                  onChanged: (value) async {
+                    final prefs =
+                    await SharedPreferences.getInstance();
+                    await prefs.setBool(
+                        'callingAlert', value);
+
+                    setState(() {
+                      _callingAlertEnabled = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            /// Dark Mode
+            Row(
+              mainAxisAlignment:
+              MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   "Dark Mode",
@@ -55,15 +138,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Switch(
-                  value: themeNotifier.value == ThemeMode.dark,
-                  activeColor: Colors.blueAccent,
+                  value:
+                  themeNotifier.value == ThemeMode.dark,
                   onChanged: (value) async {
                     final prefs =
                     await SharedPreferences.getInstance();
-                    await prefs.setBool('isDarkMode', value);
+                    await prefs.setBool(
+                        'isDarkMode', value);
 
-                    themeNotifier.value =
-                    value ? ThemeMode.dark : ThemeMode.light;
+                    themeNotifier.value = value
+                        ? ThemeMode.dark
+                        : ThemeMode.light;
                   },
                 ),
               ],
@@ -75,26 +160,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                padding:
+                const EdgeInsets.symmetric(vertical: 16),
               ),
               onPressed: () async {
                 final shouldLogout =
                 await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text("Confirm Logout"),
+                    title:
+                    const Text("Confirm Logout"),
                     content: const Text(
                         "Are you sure you want to logout?"),
                     actions: [
                       TextButton(
                         onPressed: () =>
                             Navigator.pop(context, false),
-                        child: const Text("Cancel"),
+                        child:
+                        const Text("Cancel"),
                       ),
                       TextButton(
                         onPressed: () =>
