@@ -74,7 +74,7 @@ class SpeedMonitorScreen extends StatefulWidget {
 class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   bool _isTracking = false;
   double _speed = 0.0;
-  double _speedLimit = 60;
+  double? _speedLimit;
   bool _alertSent = false;
   double _totalDistance = 0.0;
   Position? _lastPosition;
@@ -152,33 +152,35 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         );
       }
 
-      if (speedKmh > _speedLimit) {
-
-        if (!_alertSent) {
-          _alertSent = true;
-          _sendOverspeedEmail(position);
-          _sendOverspeedToWebhook(position);
-        }
+      if (_speedLimit != null && _speedLimit != null && _speed > _speedLimit!!){
 
         _overspeedCount++;
 
         print("Overspeed Count: $_overspeedCount");
 
-        if (_overspeedCount >= 5 && !_isSpeaking) {
+        _sendOverspeedToWebhook(
+          Position(
+            longitude: _lastPosition?.longitude ?? 0,
+            latitude: _lastPosition?.latitude ?? 0,
+            timestamp: DateTime.now(),
+            accuracy: 1,
+            altitude: 0,
+            altitudeAccuracy: 1,
+            heading: 0,
+            headingAccuracy: 1,
+            speed: _speed / 3.6,
+            speedAccuracy: 1,
+          ),
+        );
+
+        if (_overspeedCount == 5 && !_isSpeaking) {
           _triggerContinuousOverspeedWarning();
         }
-
-      } else {
-
-        if (_alertSent) {
-          print("Speed normalized. Resetting.");
-        }
-
+      }else {
         _alertSent = false;
-        _overspeedCount = 0;
       }
 
-      if (speedKmh < _speedLimit - 5) {
+      if (speedKmh < _speedLimit! - 5) {
         _alertSent = false;
       }
 
@@ -238,6 +240,11 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       }
     } catch (e) {
       print("Speed limit fetch error: $e");
+    }
+    if (_speedLimit == null) {
+      setState(() {
+        _speedLimit = 60; // fallback only if nothing found
+      });
     }
   }
   void _stopTracking() {
@@ -457,12 +464,12 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                         shape: BoxShape.circle,
                         color: Colors.white,
                         border: Border.all(
-                          color: _speed > _speedLimit
+                          color: _speedLimit != null && _speed > _speedLimit!
                               ? Colors.redAccent
                               : Colors.red,
-                          width: _speed > _speedLimit ? 5 : 3,
+                          width: _speedLimit != null && _speed > _speedLimit! ? 5 : 3,
                         ),
-                        boxShadow: _speed > _speedLimit
+                        boxShadow: _speedLimit != null && _speed > _speedLimit!
                             ? [
                           BoxShadow(
                             color: Colors.redAccent.withOpacity(0.6),
@@ -476,9 +483,9 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            _speedLimit.toStringAsFixed(0),
+                            _speedLimit?.toStringAsFixed(0) ?? "--",
                             style: TextStyle(
-                              color: _speed > _speedLimit
+                              color: _speedLimit != null && _speed > _speedLimit!
                                   ? Colors.redAccent
                                   : Colors.black,
                               fontSize: 22,
@@ -625,14 +632,13 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     _speed += 10;
                   });
 
-                  if (_speed > _speedLimit){
-                    _alertSent = true;
+                  if (_speedLimit != null && _speedLimit != null && _speed > _speedLimit!!){
+
                     _overspeedCount++;
 
-                    print("Overspeed Count: $_overspeedCount");
+                    print("Overspeed Count (TEST): $_overspeedCount");
 
-
-                    _sendOverspeedEmail(
+                    _sendOverspeedToWebhook(
                       Position(
                         longitude: _lastPosition?.longitude ?? 0,
                         latitude: _lastPosition?.latitude ?? 0,
@@ -647,7 +653,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                       ),
                     );
 
-                    if (_overspeedCount >= 5) {
+                    if (_overspeedCount == 5 && !_isSpeaking) {
                       _triggerContinuousOverspeedWarning();
                     }
                   }
@@ -664,7 +670,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     if (_speed < 0) _speed = 0;
                   });
 
-                  if (_speed < _speedLimit - 5) {
+                  if (_speed < _speedLimit! - 5) {
                     _alertSent = false;
                   }
                 },
@@ -760,7 +766,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
   Future<void> _sendOverspeedToWebhook(Position position) async {
     final url = Uri.parse(
-      "https://atharvnova.app.n8n.cloud/webhook/overspeed-alert",
+      "https://novanode3.app.n8n.cloud/webhook-test/test-call",
     );
 
     try {
