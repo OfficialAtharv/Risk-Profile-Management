@@ -1,0 +1,212 @@
+{
+  "name": "calling_funtionality",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-call",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        272
+      ],
+      "id": "c42db21a-c4ea-4692-bcbf-dfc520977f9c",
+      "name": "Webhook",
+      "webhookId": "0ea04091-180a-4340-ae82-c4fc95cb1daa"
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "from": "+14722262672",
+        "to": "=+917066150996",
+        "twiml": true,
+        "message": "<Response>     <Say voice=\"alice\">         Emergency alert. This is an automated call from Speed Monitor system.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         The vehicle has exceeded the speed limit ten times.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         Immediate action is advised.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         Thank you.     </Say> </Response>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        544,
+        176
+      ],
+      "id": "51befa9d-f221-40a9-aeae-5181dffc4430",
+      "name": "Make a call",
+      "credentials": {
+        "twilioApi": {
+          "id": "KTNj9CYeeOmdIEWL",
+          "name": "test 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2f2dc83f-614a-4858-8844-e77f069b6bd0",
+              "leftValue": "={{ $json.newCount }}",
+              "rightValue": 10,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        352,
+        416
+      ],
+      "id": "dd347d14-ac95-472f-b0fc-9cb581baffe9",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "=speed-monitor-app",
+        "database": "=(default)",
+        "collection": "=overspeedCounters",
+        "documentId": "={{$node[\"Webhook\"].json.body.userId}}",
+        "simple": false
+      },
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        80
+      ],
+      "id": "0ca1f184-e131-4cdc-a28f-c88250ece0db",
+      "name": "Get a document",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "ccZIKftu3gTxQHp4",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = $node[\"Webhook\"].json.body.userId;\nconst doc = $json || {};\nconst existingCount = doc.count ?? 0;\n\nconst newCount = existingCount + 1;\n\nreturn [{\n  userId,\n  existingCount,\n  newCount,\n  count: newCount,   // ✅ THIS is what Firestore will write\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        384
+      ],
+      "id": "52e20d4e-fc1b-472f-bb67-2dc4c041f990",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "upsert",
+        "projectId": "speed-monitor-app",
+        "collection": "overspeedCounters",
+        "updateKey": "={{ $json.userId }}",
+        "columns": "=count"
+      },
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        192
+      ],
+      "id": "aca8b9eb-8ff3-4563-ba9b-7951b724f765",
+      "name": "Create or update a document",
+      "credentials": {
+        "googleApi": {
+          "id": "ccZIKftu3gTxQHp4",
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get a document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Make a call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get a document": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Create or update a document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a document": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "26ef031e-96f4-4d52-ac02-a83b400f7f39",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "23e1e6b8e0322c1049f8c520a288e96f9e5d8dfc1762433b199485b001a6ee2b"
+  },
+  "id": "yAWi5E4svm1E6uMG",
+  "tags": []
+}
