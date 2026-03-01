@@ -766,7 +766,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
   Future<void> _sendOverspeedToWebhook(Position position) async {
     final url = Uri.parse(
-      "https://novanode3.app.n8n.cloud/webhook/test-call",
+      "https://novanode3.app.n8n.cloud/webhook-test/overspeed",
     );
 
     try {
