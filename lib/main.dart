@@ -780,6 +780,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
           "limit": _speedLimit,
           "latitude": position.latitude,
           "longitude": position.longitude,
+          "tripId": _currentTripId ?? "noTrip",
         }),
       );
 
