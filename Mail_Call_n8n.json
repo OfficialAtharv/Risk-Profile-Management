@@ -1,0 +1,245 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "overspeed",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        256,
+        64
+      ],
+      "id": "468512e5-0df4-449e-867f-dac1830cb25a",
+      "name": "Webhook1",
+      "webhookId": "0521fc00-49b7-4b5c-90e0-8551ea4a6151"
+    },
+    {
+      "parameters": {
+        "sendTo": "28.atharvkulkarni@gmail.com",
+        "subject": "Overspeed Alert 🚨",
+        "emailType": "text",
+        "message": "HERE IT IS MAIL TRIGGERED FOR OVERSPEED ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1312,
+        -48
+      ],
+      "id": "87993697-771d-48de-aa92-1f0d53e89665",
+      "name": "Send a message1",
+      "webhookId": "30140818-e465-4cc2-ac19-0a2f6ed0a4b1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Dkyn4uCKDCYtGntr",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "from": "+14722262672",
+        "to": "=+917066150996",
+        "twiml": true,
+        "message": "<Response>     <Say voice=\"alice\">         Emergency alert. This is an automated call from Speed Monitor system.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         The vehicle has exceeded the speed limit ten times.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         Immediate action is advised.     </Say>     <Pause length=\"1\"/>     <Say voice=\"alice\">         Thank you.     </Say> </Response>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1312,
+        144
+      ],
+      "id": "800a7505-d0c0-436c-a30d-03206493139b",
+      "name": "Make a call",
+      "credentials": {
+        "twilioApi": {
+          "id": "KTNj9CYeeOmdIEWL",
+          "name": "test 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Create or update a document').item.json.body.overspeedCount }}",
+                    "rightValue": 5,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "72bc5ea3-9390-4849-aaeb-95cb3dc50eae"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2ab04041-82bd-4faf-93b8-9bf8bd69b0ab",
+                    "leftValue": "={{ $('Create or update a document').item.json.body.overspeedCount }}",
+                    "rightValue": 10,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        64
+      ],
+      "id": "7c93d570-90cd-4751-a7fd-78a37c8059fb",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": "speed-monitor-app",
+        "collection": "=users/{{$json.body.userId}}/activeTrips",
+        "documentId": "={{$json.body.tripId}}",
+        "simple": false
+      },
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        64
+      ],
+      "id": "4d263fe0-ef38-4d18-bc86-713c810e6e0a",
+      "name": "Get a document",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "ccZIKftu3gTxQHp4",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "upsert",
+        "projectId": "speed-monitor-app",
+        "collection": "=users/{{$json.body.userId}}/activeTrips",
+        "updateKey": "={{$node[\"Webhook1\"].json.body.tripId.toString()}}",
+        "columns": "overspeedCount"
+      },
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        64
+      ],
+      "id": "68b9f614-1c6c-44ae-9cb6-7cd033b92d25",
+      "name": "Create or update a document",
+      "credentials": {
+        "googleApi": {
+          "id": "ccZIKftu3gTxQHp4",
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Create or update a document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Make a call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a document": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a document": {
+      "main": [
+        [
+          {
+            "node": "Get a document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6555be85-5157-4c73-b331-e4a3fe07d8f8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "23e1e6b8e0322c1049f8c520a288e96f9e5d8dfc1762433b199485b001a6ee2b"
+  },
+  "id": "q0g4u0JkLYvNPtwJ",
+  "tags": []
+}
