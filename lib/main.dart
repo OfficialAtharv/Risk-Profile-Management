@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import '/screens/route_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -877,6 +878,7 @@ class _MainScreenState extends State<MainScreen> {
             },
           ),
           const TripHistoryScreen(),
+          const RouteScreen(),
           const SettingsScreen(),
         ],
       ),
@@ -902,6 +904,10 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.history),
             label: "Trips",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.alt_route),
+            label: 'Route',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
