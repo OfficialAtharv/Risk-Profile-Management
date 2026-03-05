@@ -1,0 +1,107 @@
+{
+  "name": "Geofence Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "geofence-alert",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "192b7ccc-edee-4c70-a106-13bee8e1dcd2",
+      "name": "Webhook",
+      "webhookId": "08aa4308-0368-427f-b95f-7885638b1174"
+    },
+    {
+      "parameters": {
+        "fromEmail": "atharv21.novagenx@gmail.com",
+        "toEmail": "novagenxnode3@gmail.com",
+        "subject": "Call functionlity check for geofencing ",
+        "emailFormat": "text",
+        "text": "Call ASAP\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "363cea3a-f72d-45d5-af20-9b125bda46a0",
+      "name": "Send an Email",
+      "webhookId": "461749da-7e43-4cf2-9aca-84e54ecb8936",
+      "credentials": {
+        "smtp": {
+          "id": "cLpKNRMHgI6JrFET",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "from": "+14722262672",
+        "to": "+917066150996",
+        "message": " Emergency alert. This is an automated call from Speed Monitor system. \nThe vehicle has crossed the geofencing limit.  Immediate action is advised.     Thank you.     ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "35ad4ee4-0714-44de-9f75-b00da9d4abb0",
+      "name": "Make a call",
+      "credentials": {
+        "twilioApi": {
+          "id": "KTNj9CYeeOmdIEWL",
+          "name": "test 1"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Make a call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make a call": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "15058198-2d7a-48a4-bc3e-ac0b2ec5fb73",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "23e1e6b8e0322c1049f8c520a288e96f9e5d8dfc1762433b199485b001a6ee2b"
+  },
+  "id": "pdJb5CJHRyhQGnfz",
+  "tags": []
+}
