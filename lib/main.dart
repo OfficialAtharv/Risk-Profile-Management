@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import '/screens/route_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -393,14 +394,28 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               const SizedBox(height: 10),
 
               // 🔹 APP TITLE
-              Text(
-                "Speed Monitor",
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.2,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+
+                  Image.asset(
+                    scale: 2.0,
+                    "assets/images/jeevan4.png",
+                    height: 50,
+                  ),
+
+                  Text(
+                    "JEEVAN",
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+
+                ],
               ),
 
               const SizedBox(height: 20),
@@ -877,6 +892,7 @@ class _MainScreenState extends State<MainScreen> {
             },
           ),
           const TripHistoryScreen(),
+          const RouteScreen(),
           const SettingsScreen(),
         ],
       ),
@@ -902,6 +918,10 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.history),
             label: "Trips",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.alt_route),
+            label: 'Route',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
