@@ -394,14 +394,28 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
               const SizedBox(height: 10),
 
               // 🔹 APP TITLE
-              Text(
-                "Speed Monitor",
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.2,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+
+                  Image.asset(
+                    scale: 2.0,
+                    "assets/images/jeevan4.png",
+                    height: 50,
+                  ),
+
+                  Text(
+                    "JEEVAN",
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+
+                ],
               ),
 
               const SizedBox(height: 20),

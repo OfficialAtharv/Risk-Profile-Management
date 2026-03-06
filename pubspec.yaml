@@ -27,6 +27,23 @@ environment:
 # dependencies can be manually updated by changing the version numbers below to
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
+
+dev_dependencies:
+  flutter_launcher_icons: ^0.13.1
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: assets/icons/app_icon_source_512.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icons/app_icon_source_512.png
+
+
+
+
 dependencies:
   flutter:
     sdk: flutter
@@ -52,16 +69,6 @@ dependencies:
 
 
 
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
-  flutter_lints: ^3.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -76,6 +83,9 @@ flutter:
 
   assets:
     - assets/images/ngxl_logo.png
+    - assets/images/jeevan4.png
+
+
 
 
 

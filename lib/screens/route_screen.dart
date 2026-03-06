@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-
+import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 
@@ -38,6 +38,15 @@ class _RouteScreenState extends State<RouteScreen> {
   static const double routeToleranceMeters = 300;
   static const int cooldownMinutesAfterAlert = 10;
   static const double ignoreIfSpeedBelowKmh = 5;
+
+  // -------------------------
+  // After breaking fence
+  // -------------------------
+  Position? _breachPos;
+  DateTime? _breachTime;
+
+  Position? _lastOutsidePos;  // latest outside point
+  DateTime? _lastOutsideTime;
 
   // -------------------------
   // UI State
@@ -147,25 +156,53 @@ class _RouteScreenState extends State<RouteScreen> {
       return;
     }
 
+    // 1) Get GPS
     final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.bestForNavigation,
     );
 
+    // 2) Reverse geocode to a nice label
+    String niceLabel = "Current Location";
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+
+        final area = (p.subLocality ?? '').trim();
+        final locality = (p.locality ?? '').trim();
+        final admin = (p.administrativeArea ?? '').trim();
+
+        // Build best looking label
+        final parts = <String>[];
+        if (area.isNotEmpty) parts.add(area);
+        if (locality.isNotEmpty) parts.add(locality);
+        if (parts.isEmpty && admin.isNotEmpty) parts.add(admin);
+
+        if (parts.isNotEmpty) {
+          niceLabel = parts.join(", ");
+        }
+      }
+    } catch (_) {
+      // Keep fallback label
+    }
+
+    // 3) Save as selected start
     setState(() {
       _selectedStart = PlaceSuggestion(
-        label: "Current Location",
+        label: "$niceLabel (Current)",
         lat: pos.latitude,
         lon: pos.longitude,
       );
-      _startController.text = "Current Location";
+      _startController.text = "$niceLabel (Current)";
       _suggestions = [];
     });
 
-    // Move map to current location
+    // 4) Move map
     _mapController.move(LatLng(pos.latitude, pos.longitude), 14);
-
-    // If destination already selected, you can optionally fetch routes immediately
-    // (not mandatory)
   }
   // -------------------------
   // OSRM Routes Fetch
@@ -780,8 +817,7 @@ class _RouteScreenState extends State<RouteScreen> {
                         if (action == "current") {
                           await _setStartAsCurrentLocation();
                         } else {
-                          // manual: just focus the field and let Photon search work
-                          // nothing special needed
+                          // manual -> do nothing, user will type and Photon suggestions will appear
                         }
                       },
                       onChanged: _onQueryChanged,
