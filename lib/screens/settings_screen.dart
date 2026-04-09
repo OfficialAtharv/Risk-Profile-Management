@@ -52,6 +52,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setBool('isDarkMode', value);
 
     themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
+
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _handleLogout() async {
@@ -84,145 +88,152 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final isDarkMode = themeNotifier.value == ThemeMode.dark;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF050816),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Settings",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                "Manage your preferences",
-                style: TextStyle(
-                  color: Color(0xFF8B95A7),
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 28),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentThemeMode, _) {
+        final isDarkMode = currentThemeMode == ThemeMode.dark;
 
-              _buildSectionTitle(
-                icon: Icons.notifications_none_rounded,
-                title: "Notifications",
-              ),
-              const SizedBox(height: 12),
-              _buildSectionCard(
+        return Scaffold(
+          backgroundColor: const Color(0xFF050816),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildToggleRow(
-                    title: "App Alerts",
-                    subtitle: "Get notified about overspeeding",
-                    value: _appNotificationEnabled,
-                    onChanged: _updateAppNotification,
-                  ),
-                  _buildDivider(),
-                  _buildToggleRow(
-                    title: "Emergency Calling",
-                    subtitle: "Auto-call emergency contact",
-                    value: _callingAlertEnabled,
-                    onChanged: _updateCallingAlert,
-                  ),
-                  _buildDivider(),
-                  _buildInfoRow(
-                    icon: Icons.phone_outlined,
-                    title: "Emergency Contact",
-                    subtitle: "+1 (555) 123-4567",
-                    onTap: () {},
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 28),
-
-              _buildSectionTitle(
-                icon: Icons.dark_mode_outlined,
-                title: "Appearance",
-              ),
-              const SizedBox(height: 12),
-              _buildSectionCard(
-                children: [
-                  _buildToggleRow(
-                    title: "Dark Mode",
-                    subtitle: "Use dark theme",
-                    value: isDarkMode,
-                    onChanged: _updateDarkMode,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 28),
-
-              _buildSectionTitle(
-                icon: Icons.person_outline_rounded,
-                title: "Account",
-              ),
-              const SizedBox(height: 12),
-              _buildSectionCard(
-                children: [
-                  _buildInfoRow(
-                    icon: Icons.mail_outline_rounded,
-                    title: "Email",
-                    subtitle: user?.email ?? 'No user',
-                    onTap: () {},
-                  ),
-                  _buildDivider(),
-                  _buildInfoRow(
-                    icon: Icons.person_outline_rounded,
-                    title: "Profile",
-                    subtitle: "View and edit profile",
-                    onTap: () {},
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 28),
-
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _handleLogout,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFFF5C63),
-                    side: const BorderSide(
-                      color: Color(0x66FF5C63),
-                      width: 1,
+                  const Text(
+                    "Settings",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    backgroundColor: const Color(0xFF0B1222),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.logout_rounded, size: 20),
-                      SizedBox(width: 10),
-                      Text(
-                        "Logout",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    "Manage your preferences",
+                    style: TextStyle(
+                      color: Color(0xFF8B95A7),
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  _buildSectionTitle(
+                    icon: Icons.notifications_none_rounded,
+                    title: "Notifications",
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    children: [
+                      _buildToggleRow(
+                        title: "App Alerts",
+                        subtitle: "Get notified about overspeeding",
+                        value: _appNotificationEnabled,
+                        onChanged: _updateAppNotification,
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
+                        title: "Emergency Calling",
+                        subtitle: "Auto-call emergency contact",
+                        value: _callingAlertEnabled,
+                        onChanged: _updateCallingAlert,
+                      ),
+                      _buildDivider(),
+                      _buildInfoRow(
+                        icon: Icons.phone_outlined,
+                        title: "Emergency Contact",
+                        subtitle: "+1 (555) 123-4567",
+                        onTap: () {},
                       ),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 28),
+
+                  _buildSectionTitle(
+                    icon: Icons.dark_mode_outlined,
+                    title: "Appearance",
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    children: [
+                      _buildToggleRow(
+                        title: "Dark Mode",
+                        subtitle: "Use dark theme",
+                        value: isDarkMode,
+                        onChanged: _updateDarkMode,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  _buildSectionTitle(
+                    icon: Icons.person_outline_rounded,
+                    title: "Account",
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSectionCard(
+                    children: [
+                      _buildInfoRow(
+                        icon: Icons.mail_outline_rounded,
+                        title: "Email",
+                        subtitle: user?.email ?? 'No user',
+                        onTap: () {},
+                      ),
+                      _buildDivider(),
+                      _buildInfoRow(
+                        icon: Icons.person_outline_rounded,
+                        title: "Profile",
+                        subtitle: "View and edit profile",
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _handleLogout,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF5C63),
+                        side: const BorderSide(
+                          color: Color(0x66FF5C63),
+                          width: 1,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        backgroundColor: const Color(0xFF0B1222),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.logout_rounded, size: 20),
+                          SizedBox(width: 10),
+                          Text(
+                            "Logout",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -302,11 +313,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.white,
-            activeTrackColor: const Color(0xFF2F80FF),
+            activeThumbColor: Colors.white,
+            activeTrackColor: const Color(0xFF3B82F6),
             inactiveThumbColor: Colors.white,
-            inactiveTrackColor: const Color(0xFF4B5567),
-          ),
+            inactiveTrackColor: const Color(0xFF2A344A),
+            trackOutlineColor: MaterialStateProperty.all(Colors.transparent),
+          )
         ],
       ),
     );
