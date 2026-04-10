@@ -3,14 +3,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  String _normalizeEmail(String email) {
+    return email.trim().toLowerCase();
+  }
+
+  String _normalizePassword(String password) {
+    return password.trim();
+  }
+
   // Sign Up
   Future<User?> signUp({
     required String email,
     required String password,
   }) async {
     final credential = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
+      email: _normalizeEmail(email),
+      password: _normalizePassword(password),
     );
     return credential.user;
   }
@@ -21,8 +29,8 @@ class AuthService {
     required String password,
   }) async {
     final credential = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
+      email: _normalizeEmail(email),
+      password: _normalizePassword(password),
     );
     return credential.user;
   }
