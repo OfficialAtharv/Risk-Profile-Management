@@ -124,21 +124,23 @@ class _RouteScreenState extends State<RouteScreen> {
     required double distFromStartM,
     required double distFromEndM,
   }) async {
-    final url =
-    Uri.parse("https://novanode3.app.n8n.cloud/webhook/geofence-alert");
+    final url = Uri.parse(
+      "https://n8nworkflownode3.app.n8n.cloud/webhook/safety-alert",
+    );
 
     try {
       await http.post(
         url,
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
+          "eventType": "geofence",
+          "userId": "unknown", // or current user id if you want to pass it here too
           "overspeedCount": 0,
           "speed": 0,
           "limit": 0,
           "latitude": lat,
           "longitude": lon,
           "tripId": "geofence",
-          "event": "geofence_violation",
           "startLocation": _selectedStart?.label,
           "endLocation": _selectedEnd?.label,
           "startLat": _selectedStart?.lat,
@@ -151,9 +153,9 @@ class _RouteScreenState extends State<RouteScreen> {
         }),
       );
 
-      print("✅ Geofence webhook sent");
+      print("✅ Geofence webhook sent successfully");
     } catch (e) {
-      print("❌ Webhook error: $e");
+      print("❌ Geofence webhook error: $e");
     }
   }
 
