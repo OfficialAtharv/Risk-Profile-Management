@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:mailer/mailer.dart';
@@ -9,7 +11,6 @@ import 'models/trip_model.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:speed_monitor_flutter/services/firestore_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -19,6 +20,46 @@ import 'dart:convert';
 import '/screens/route_screen.dart';
 import 'screens/trip_history_screen.dart';
 import 'auth/auth_wrapper.dart';
+
+class _SpeedFetchResult {
+  final double speedLimit;
+  final String source;
+  final String roadType;
+
+  const _SpeedFetchResult({
+    required this.speedLimit,
+    required this.source,
+    required this.roadType,
+  });
+}
+
+class _OverpassRoadCandidate {
+  final Map<String, dynamic> element;
+  final Map<String, dynamic> tags;
+  final double distanceMeters;
+  final double score;
+  final double? parsedMaxspeed;
+  final String roadType;
+
+  const _OverpassRoadCandidate({
+    required this.element,
+    required this.tags,
+    required this.distanceMeters,
+    required this.score,
+    required this.parsedMaxspeed,
+    required this.roadType,
+  });
+}
+
+class _SpeedCacheEntry {
+  final _SpeedFetchResult result;
+  final DateTime createdAt;
+
+  const _SpeedCacheEntry({
+    required this.result,
+    required this.createdAt,
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,9 +108,23 @@ class SpeedMonitorScreen extends StatefulWidget {
 }
 
 class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
+  static const List<String> _overpassEndpoints = [
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+  ];
+
+  static const Duration _overpassTimeout = Duration(seconds: 8);
+  static const Duration _speedCacheTtl = Duration(minutes: 2);
+  Map<String, dynamic>? _primaryEmergencyContact;
+  bool _isLoadingPrimaryContact = false;
   bool _isTracking = false;
   double _speed = 0.0;
   double? _speedLimit;
+  String _speedLimitSource = "loading";
+  String _roadTypeLabel = "--";
+  bool _isFetchingSpeedLimit = false;
+
   bool _alertSent = false;
   double _totalDistance = 0.0;
   Position? _lastPosition;
@@ -81,13 +136,112 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   bool _isSpeaking = false;
 
   StreamSubscription<Position>? _positionStream;
+  StreamSubscription<Position>? _previewPositionStream;
+  DateTime? _lastSpeedLimitFetch;
+  DateTime? _lastOverspeedIncrementAt;
+  Position? _lastSpeedLimitFetchPosition;
 
-  Future<void> _startTracking() async {
+  final Map<String, _SpeedCacheEntry> _speedLimitCache = {};
+  final math.Random _random = math.Random();
+  int _speedFetchRequestId = 0;
+
+  String _speedLimitDisplayText() {
+    if (_isFetchingSpeedLimit && _speedLimit == null) {
+      return "Fetching...";
+    }
+
+    if (_speedLimit == null) {
+      return "--";
+    }
+
+    return _speedLimit!.toStringAsFixed(0);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initTTS();
+    _startPreviewLocationUpdates();
+    _loadPrimaryEmergencyContact();
+    _flutterTts.setCompletionHandler(() {
+      print("Speech Completed");
+      _isSpeaking = false;
+      _overspeedCount = 0;
+    });
+
+    _flutterTts.setErrorHandler((msg) {
+      print("TTS Error: $msg");
+      _isSpeaking = false;
+    });
+  }
+
+  Future<void> _loadPrimaryEmergencyContact() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      setState(() {
+        _isLoadingPrimaryContact = true;
+      });
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('emergency_contacts')
+          .where('isPrimary', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+
+      if (snapshot.docs.isNotEmpty) {
+        print('Primary contact loaded: ${snapshot.docs.first.data()}');
+        setState(() {
+          _primaryEmergencyContact = snapshot.docs.first.data();
+          _isLoadingPrimaryContact = false;
+        });
+      } else {
+        setState(() {
+          _primaryEmergencyContact = null;
+          _isLoadingPrimaryContact = false;
+        });
+      }
+    } catch (e) {
+      print('Failed to load primary emergency contact: $e');
+
+      if (!mounted) return;
+      setState(() {
+        _primaryEmergencyContact = null;
+        _isLoadingPrimaryContact = false;
+      });
+    }
+  }
+  @override
+  void dispose() {
+    _positionStream?.cancel();
+    _previewPositionStream?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initTTS() async {
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.setPitch(1.0);
+    await _flutterTts.awaitSpeakCompletion(true);
+    await _flutterTts.setSharedInstance(true);
+    await _flutterTts.setQueueMode(1);
+  }
+
+  Future<void> _startPreviewLocationUpdates() async {
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+    if (!serviceEnabled) {
+      print("❌ Location service disabled");
+      return;
+    }
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -96,38 +250,85 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
 
     if (permission == LocationPermission.deniedForever ||
         permission == LocationPermission.denied) {
+      print("❌ Location permission denied");
       return;
     }
+
+    _previewPositionStream?.cancel();
+
+    _previewPositionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) async {
+      if (position.accuracy > 35) return;
+
+      if (mounted) {
+        setState(() {
+          _lastPosition = position;
+        });
+      }
+
+      _mapController.move(
+        LatLng(position.latitude, position.longitude),
+        17,
+      );
+
+      await _fetchSpeedLimit(position.latitude, position.longitude);
+    });
+  }
+
+  Future<void> _startTracking() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      print("❌ Location service disabled");
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever ||
+        permission == LocationPermission.denied) {
+      print("❌ Location permission denied");
+      return;
+    }
+
+    _positionStream?.cancel();
 
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 1,
       ),
-    ).listen((Position position) {
+    ).listen((Position position) async {
       if (position.accuracy > 35) return;
-      if (_isTracking) {
-        if (_lastPosition != null) {
-          double distanceInMeters = Geolocator.distanceBetween(
-            _lastPosition!.latitude,
-            _lastPosition!.longitude,
-            position.latitude,
-            position.longitude,
-          );
+      if (!_isTracking) return;
 
-          _totalDistance += distanceInMeters;
-        }
-
-        _lastPosition = position;
-        _fetchSpeedLimit(position.latitude, position.longitude);
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          17,
+      if (_lastPosition != null) {
+        final distanceInMeters = Geolocator.distanceBetween(
+          _lastPosition!.latitude,
+          _lastPosition!.longitude,
+          position.latitude,
+          position.longitude,
         );
+        _totalDistance += distanceInMeters;
       }
 
-      double speedKmh = position.speed * 3.6;
+      _lastPosition = position;
 
+      _mapController.move(
+        LatLng(position.latitude, position.longitude),
+        17,
+      );
+
+      double speedKmh = position.speed * 3.6;
       if (speedKmh < 3) {
         speedKmh = 0;
       }
@@ -136,7 +337,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         _speed = speedKmh;
       });
 
-      if (_isTracking && _currentTripId != null) {
+      if (_currentTripId != null) {
         FirestoreService().saveSpeedLog(
           _currentTripId!,
           speedKmh,
@@ -145,136 +346,520 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         );
       }
 
-      if (_speedLimit != null && _speedLimit != null && _speed > _speedLimit!!) {
-        _overspeedCount++;
+      final currentLimit = _speedLimit;
 
-        print("Overspeed Count: $_overspeedCount");
+      if (currentLimit != null && _speed > currentLimit) {
+        final now = DateTime.now();
 
-        _sendOverspeedToWebhook(
-          Position(
-            longitude: _lastPosition?.longitude ?? 0,
-            latitude: _lastPosition?.latitude ?? 0,
-            timestamp: DateTime.now(),
-            accuracy: 1,
-            altitude: 0,
-            altitudeAccuracy: 1,
-            heading: 0,
-            headingAccuracy: 1,
-            speed: _speed / 3.6,
-            speedAccuracy: 1,
-          ),
-        );
+        if (_lastOverspeedIncrementAt == null ||
+            now.difference(_lastOverspeedIncrementAt!).inSeconds >= 5) {
+          _overspeedCount++;
+          _lastOverspeedIncrementAt = now;
 
-        if (_overspeedCount == 5 && !_isSpeaking) {
-          _triggerContinuousOverspeedWarning();
+          print("Overspeed Count: $_overspeedCount");
+
+          await _sendOverspeedToWebhook(
+            Position(
+              longitude: _lastPosition?.longitude ?? 0,
+              latitude: _lastPosition?.latitude ?? 0,
+              timestamp: DateTime.now(),
+              accuracy: 1,
+              altitude: 0,
+              altitudeAccuracy: 1,
+              heading: 0,
+              headingAccuracy: 1,
+              speed: _speed / 3.6,
+              speedAccuracy: 1,
+            ),
+          );
+
+          if (_overspeedCount == 5 && !_isSpeaking) {
+            await _triggerContinuousOverspeedWarning();
+          }
         }
       } else {
         _alertSent = false;
       }
 
-      if (speedKmh < _speedLimit! - 5) {
+      if (currentLimit != null && speedKmh < currentLimit - 5) {
         _alertSent = false;
       }
     });
   }
 
-  DateTime? _lastSpeedLimitFetch;
-
   Future<void> _fetchSpeedLimit(double lat, double lon) async {
     if (_lastSpeedLimitFetch != null &&
-        DateTime.now().difference(_lastSpeedLimitFetch!).inSeconds < 30) {
+        DateTime.now().difference(_lastSpeedLimitFetch!).inSeconds < 5) {
       return;
     }
-    print("Fetching speed for: $lat, $lon");
-    _lastSpeedLimitFetch = DateTime.now();
 
-    final query = """
-  [out:json];
-  way(around:50,$lat,$lon)["highway"];
-  out tags;
-  """;
-
-    try {
-      final response = await http.post(
-        Uri.parse("https://overpass-api.de/api/interpreter"),
-        body: query,
+    if (_lastSpeedLimitFetchPosition != null) {
+      final movedDistance = Geolocator.distanceBetween(
+        _lastSpeedLimitFetchPosition!.latitude,
+        _lastSpeedLimitFetchPosition!.longitude,
+        lat,
+        lon,
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data["elements"] != null && data["elements"].isNotEmpty) {
-          for (var element in data["elements"]) {
-            final tags = element["tags"];
-            print("Road Tags: $tags");
-            if (tags != null && tags["maxspeed"] != null) {
-              String raw = tags["maxspeed"].toString();
-              raw = raw.replaceAll(RegExp(r'[^0-9]'), '');
-
-              double? parsed = double.tryParse(raw);
-
-              if (parsed != null) {
-                setState(() {
-                  _speedLimit = parsed;
-                });
-
-                print("Updated Speed Limit: $_speedLimit");
-                return;
-              }
-            }
-          }
-        }
+      if (movedDistance < 20) {
+        return;
       }
-    } catch (e) {
-      print("Speed limit fetch error: $e");
     }
-    if (_speedLimit == null) {
+
+    _lastSpeedLimitFetch = DateTime.now();
+    _lastSpeedLimitFetchPosition = Position(
+      latitude: lat,
+      longitude: lon,
+      timestamp: DateTime.now(),
+      accuracy: 1,
+      altitude: 0,
+      altitudeAccuracy: 1,
+      heading: 0,
+      headingAccuracy: 1,
+      speed: 0,
+      speedAccuracy: 1,
+    );
+
+    final int requestId = ++_speedFetchRequestId;
+
+    if (mounted) {
       setState(() {
-        _speedLimit = 60;
+        _isFetchingSpeedLimit = true;
+        if (_speedLimit == null) {
+          _speedLimitSource = "loading";
+          _roadTypeLabel = "--";
+        }
       });
     }
+
+    print("➡️ _fetchSpeedLimit called");
+    print("➡️ lat=$lat lon=$lon");
+
+    try {
+      final cached = _getCachedSpeedLimit(lat, lon);
+      if (cached != null) {
+        print("✅ Using cached speed limit");
+        _applyResolvedSpeedLimit(
+          cached.speedLimit,
+          cached.source,
+          cached.roadType,
+          requestId,
+        );
+        return;
+      }
+
+      final result = await _fetchSpeedLimitWithFailover(lat, lon);
+
+      if (result != null) {
+        _storeCachedSpeedLimit(lat, lon, result);
+        _applyResolvedSpeedLimit(
+          result.speedLimit,
+          result.source,
+          result.roadType,
+          requestId,
+        );
+        return;
+      }
+
+      print("⚠️ All Overpass endpoints failed, using fallback");
+      _applyFallbackSpeedLimit(_roadTypeLabel == "--" ? null : _roadTypeLabel);
+    } catch (e) {
+      print("Speed limit fetch error: $e");
+      _applyFallbackSpeedLimit(_roadTypeLabel == "--" ? null : _roadTypeLabel);
+    }
   }
 
-  void _stopTracking() {
-    _positionStream?.cancel();
-    setState(() {
-      _speed = 0;
-    });
+  Future<_SpeedFetchResult?> _fetchSpeedLimitWithFailover(
+      double lat,
+      double lon,
+      ) async {
+    final endpoints = [..._overpassEndpoints]..shuffle(_random);
+
+    Object? lastError;
+
+    for (int round = 0; round < 2; round++) {
+      for (final endpoint in endpoints) {
+        try {
+          print("🌐 Trying Overpass endpoint: $endpoint (round ${round + 1})");
+
+          final result = await _fetchFromSingleEndpoint(
+            endpoint: endpoint,
+            lat: lat,
+            lon: lon,
+          );
+
+          if (result != null) {
+            print("✅ Speed limit resolved from $endpoint");
+            return result;
+          }
+        } catch (e) {
+          lastError = e;
+          print("❌ Endpoint failed: $endpoint");
+          print("❌ Error: $e");
+        }
+      }
+
+      if (round == 0) {
+        await Future.delayed(const Duration(milliseconds: 700));
+      }
+    }
+
+    print("❌ All endpoints exhausted. Last error: $lastError");
+    return null;
   }
 
-  @override
-  void dispose() {
-    _positionStream?.cancel();
-    super.dispose();
+  Future<_SpeedFetchResult?> _fetchFromSingleEndpoint({
+    required String endpoint,
+    required double lat,
+    required double lon,
+  }) async {
+    final query = _buildOverpassQuery(lat, lon);
+
+    final response = await http
+        .post(
+      Uri.parse(endpoint),
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "User-Agent": "SpeedMonitorFlutter/1.0",
+        "Accept": "application/json",
+      },
+      body: query,
+    )
+        .timeout(_overpassTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception("Overpass non-200: ${response.statusCode}");
+    }
+
+    final data = jsonDecode(response.body);
+    final elements = (data["elements"] as List?) ?? [];
+
+    print("Overpass elements count: ${elements.length}");
+
+    if (elements.isEmpty) {
+      return null;
+    }
+
+    final candidate = _chooseBestRoadCandidate(
+      lat: lat,
+      lon: lon,
+      elements: elements,
+    );
+
+    if (candidate == null) {
+      return null;
+    }
+
+    final double finalLimit;
+    final String finalSource;
+
+    if (candidate.parsedMaxspeed != null) {
+      finalLimit = candidate.parsedMaxspeed!;
+      finalSource = "maxspeed";
+    } else {
+      finalLimit = _fallbackByRoadType(candidate.roadType);
+      finalSource = "fallback";
+    }
+
+    print("🎯 CHOSEN ROAD TYPE: ${candidate.roadType}");
+    print("🎯 DISTANCE: ${candidate.distanceMeters.toStringAsFixed(1)} m");
+    print("🎯 SCORE: ${candidate.score.toStringAsFixed(2)}");
+    print(
+      "🎯 RAW MAXSPEED: ${candidate.tags["maxspeed"] ?? candidate.tags["maxspeed:forward"] ?? candidate.tags["maxspeed:backward"]}",
+    );
+    print("✅ finalLimit to set: $finalLimit");
+    print("✅ source: $finalSource");
+
+    return _SpeedFetchResult(
+      speedLimit: finalLimit,
+      source: finalSource,
+      roadType: candidate.roadType,
+    );
+  }
+
+  String _buildOverpassQuery(double lat, double lon) {
+    return """
+[out:json][timeout:12];
+(
+  way(around:35,$lat,$lon)
+    ["highway"]
+    ["highway"!~"footway|path|cycleway|steps|bridleway|corridor|proposed|construction|raceway|escape|bus_guideway"];
+  way(around:70,$lat,$lon)
+    ["highway"]
+    ["highway"!~"footway|path|cycleway|steps|bridleway|corridor|proposed|construction|raceway|escape|bus_guideway"];
+);
+out tags center;
+""";
+  }
+
+  _OverpassRoadCandidate? _chooseBestRoadCandidate({
+    required double lat,
+    required double lon,
+    required List elements,
+  }) {
+    _OverpassRoadCandidate? best;
+
+    for (final rawElement in elements) {
+      if (rawElement is! Map<String, dynamic>) continue;
+
+      final tagsRaw = rawElement["tags"];
+      if (tagsRaw is! Map) continue;
+
+      final tags = Map<String, dynamic>.from(tagsRaw);
+      final roadType = tags["highway"]?.toString() ?? "unknown";
+
+      final center = rawElement["center"];
+      if (center == null || center["lat"] == null || center["lon"] == null) {
+        continue;
+      }
+
+      final roadLat = (center["lat"] as num).toDouble();
+      final roadLon = (center["lon"] as num).toDouble();
+
+      final distance = Geolocator.distanceBetween(
+        lat,
+        lon,
+        roadLat,
+        roadLon,
+      );
+
+      final parsedMaxspeed = _extractBestMaxSpeed(tags);
+
+      final score = _scoreRoadCandidate(
+        distanceMeters: distance,
+        roadType: roadType,
+        hasMaxspeed: parsedMaxspeed != null,
+      );
+
+      final candidate = _OverpassRoadCandidate(
+        element: rawElement,
+        tags: tags,
+        distanceMeters: distance,
+        score: score,
+        parsedMaxspeed: parsedMaxspeed,
+        roadType: roadType,
+      );
+
+      print(
+        "Road Tags: $tags | distance=$distance | score=$score | parsedMaxspeed=$parsedMaxspeed",
+      );
+
+      if (best == null || candidate.score > best.score) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  double _scoreRoadCandidate({
+    required double distanceMeters,
+    required String roadType,
+    required bool hasMaxspeed,
+  }) {
+    double score = 0;
+
+    score += hasMaxspeed ? 1000 : 0;
+    score -= distanceMeters * 2.5;
+    score += _roadPriorityScore(roadType);
+
+    return score;
+  }
+
+  double _roadPriorityScore(String roadType) {
+    switch (roadType) {
+      case "motorway":
+        return 120;
+      case "trunk":
+        return 100;
+      case "primary":
+        return 90;
+      case "secondary":
+        return 80;
+      case "tertiary":
+        return 70;
+      case "unclassified":
+        return 55;
+      case "residential":
+        return 50;
+      case "service":
+        return 20;
+      case "living_street":
+        return 10;
+      default:
+        return 0;
+    }
+  }
+
+  double? _extractBestMaxSpeed(Map<String, dynamic> tags) {
+    return _parseMaxSpeed(tags["maxspeed"]?.toString()) ??
+        _parseMaxSpeed(tags["maxspeed:forward"]?.toString()) ??
+        _parseMaxSpeed(tags["maxspeed:backward"]?.toString());
+  }
+
+  void _applyResolvedSpeedLimit(
+      double speedLimit,
+      String source,
+      String roadType,
+      int requestId,
+      ) {
+    if (requestId != _speedFetchRequestId) {
+      print("⚠️ Ignoring stale speed fetch response");
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _speedLimit = speedLimit;
+        _speedLimitSource = source;
+        _roadTypeLabel = roadType;
+        _isFetchingSpeedLimit = false;
+      });
+    }
+
+    print("Updated Speed Limit: $_speedLimit");
+  }
+
+  String _cacheKey(double lat, double lon) {
+    final latBucket = (lat * 1000).round() / 1000;
+    final lonBucket = (lon * 1000).round() / 1000;
+    return "$latBucket,$lonBucket";
+  }
+
+  _SpeedFetchResult? _getCachedSpeedLimit(double lat, double lon) {
+    final key = _cacheKey(lat, lon);
+    final cached = _speedLimitCache[key];
+    if (cached == null) return null;
+
+    if (DateTime.now().difference(cached.createdAt) > _speedCacheTtl) {
+      _speedLimitCache.remove(key);
+      return null;
+    }
+
+    return cached.result;
+  }
+
+  void _storeCachedSpeedLimit(double lat, double lon, _SpeedFetchResult result) {
+    final key = _cacheKey(lat, lon);
+    _speedLimitCache[key] = _SpeedCacheEntry(
+      result: result,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  double? _parseMaxSpeed(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+
+    final value = raw.toLowerCase().trim();
+
+    if (value == "signals" ||
+        value == "variable" ||
+        value == "none" ||
+        value == "national" ||
+        value == "implicit" ||
+        value == "walk") {
+      return null;
+    }
+
+    final numberMatch = RegExp(r'(\d+(\.\d+)?)').firstMatch(value);
+    if (numberMatch == null) return null;
+
+    double parsed = double.tryParse(numberMatch.group(1)!) ?? 0;
+
+    if (parsed <= 0) return null;
+
+    if (value.contains("mph")) {
+      parsed = parsed * 1.60934;
+    } else if (value.contains("knots")) {
+      parsed = parsed * 1.852;
+    }
+
+    return parsed > 0 ? parsed : null;
+  }
+
+  double _fallbackByRoadType(String? roadType) {
+    switch (roadType) {
+      case "motorway":
+        return 100;
+      case "trunk":
+        return 80;
+      case "primary":
+        return 65;
+      case "secondary":
+        return 55;
+      case "tertiary":
+        return 45;
+      case "residential":
+        return 30;
+      case "service":
+        return 20;
+      case "living_street":
+        return 15;
+      default:
+        return 50;
+    }
+  }
+
+  void _applyFallbackSpeedLimit([String? roadType]) {
+    final effectiveRoadType =
+    roadType == null || roadType == "--" || roadType == "unknown"
+        ? (_roadTypeLabel == "--" ? "unknown" : _roadTypeLabel)
+        : roadType;
+
+    final fallback = _fallbackByRoadType(effectiveRoadType);
+
+    if (mounted) {
+      setState(() {
+        _speedLimit = fallback;
+        _speedLimitSource = "fallback";
+        _roadTypeLabel = effectiveRoadType;
+        _isFetchingSpeedLimit = false;
+      });
+    }
+    print("⚠️ Using fallback speed limit");
+    print("Fallback Speed Limit: $_speedLimit");
   }
 
   Future<void> _createNewTrip() async {
     _totalDistance = 0.0;
-    _lastPosition = null;
+    _lastOverspeedIncrementAt = null;
 
-    Position position = await Geolocator.getCurrentPosition();
-    _fetchSpeedLimit(position.latitude, position.longitude);
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
+      );
 
-    List<Placemark> placemarks =
-    await placemarkFromCoordinates(position.latitude, position.longitude);
+      print("Initial position fetched: ${position.latitude}, ${position.longitude}");
 
-    Placemark place = placemarks.first;
-    String area = place.subLocality ?? '';
-    String city = place.locality ?? '';
-    String startLocationName = area.isNotEmpty ? "$area, $city" : city;
+      _lastPosition = position;
 
-    _currentTrip = Trip(
-      startTime: DateTime.now(),
-      startLat: position.latitude,
-      startLng: position.longitude,
-      startLocation: startLocationName,
-    );
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
 
-    print("START LOCATION: $startLocationName");
-    print("Current user: ${FirebaseAuth.instance.currentUser?.uid}");
-    _currentTripId = await FirestoreService().saveTrip(_currentTrip!);
-    widget.onTripCreated(_currentTrip!);
-    print("Trip Started with ID: $_currentTripId");
+      final place = placemarks.first;
+      final area = place.subLocality ?? '';
+      final city = place.locality ?? '';
+      final startLocationName = area.isNotEmpty ? "$area, $city" : city;
+
+      _currentTrip = Trip(
+        startTime: DateTime.now(),
+        startLat: position.latitude,
+        startLng: position.longitude,
+        startLocation: startLocationName,
+      );
+
+      print("START LOCATION: $startLocationName");
+      print("Current user: ${FirebaseAuth.instance.currentUser?.uid}");
+
+      _currentTripId = await FirestoreService().saveTrip(_currentTrip!);
+      widget.onTripCreated(_currentTrip!);
+
+      print("Trip Started with ID: $_currentTripId");
+    } catch (e) {
+      print("❌ _createNewTrip error: $e");
+    }
   }
 
   Future<void> _endCurrentTrip() async {
@@ -284,28 +869,31 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       return;
     }
 
-    Position position = _lastPosition!;
+    final position = _lastPosition!;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       print("User not logged in");
       return;
     }
 
-    DateTime endTime = DateTime.now();
-    DateTime startTime = _currentTrip!.startTime;
-    Duration difference = endTime.difference(startTime);
-    String formattedDuration =
+    final endTime = DateTime.now();
+    final startTime = _currentTrip!.startTime;
+    final difference = endTime.difference(startTime);
+
+    final formattedDuration =
         "${difference.inHours.toString().padLeft(2, '0')}:"
         "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
         "${(difference.inSeconds % 60).toString().padLeft(2, '0')}";
 
-    List<Placemark> placemarks =
-    await placemarkFromCoordinates(position.latitude, position.longitude);
+    final placemarks = await placemarkFromCoordinates(
+      position.latitude,
+      position.longitude,
+    );
 
-    Placemark place = placemarks.first;
-    String area = place.subLocality ?? '';
-    String city = place.locality ?? '';
-    String endLocationName = area.isNotEmpty ? "$area, $city" : city;
+    final place = placemarks.first;
+    final area = place.subLocality ?? '';
+    final city = place.locality ?? '';
+    final endLocationName = area.isNotEmpty ? "$area, $city" : city;
 
     _currentTrip!.endTrip(
       endTime: endTime,
@@ -326,38 +914,100 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     print("Trip updated successfully: $_currentTripId");
   }
 
-  Future<void> _initTTS() async {
-    await _flutterTts.setLanguage("en-US");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
-
-    await _flutterTts.awaitSpeakCompletion(true);
-    await _flutterTts.setSharedInstance(true);
-    await _flutterTts.setQueueMode(1);
+  void _stopTracking() {
+    _positionStream?.cancel();
+    setState(() {
+      _speed = 0;
+    });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _initTTS();
+  Future<void> _sendOverspeedEmail(Position position) async {
+    String username = 'atharv21.novagenx@gmail.com';
+    String password = 'kzpmxlhlxcrnvhxo';
 
-    _flutterTts.setCompletionHandler(() {
-      print("Speech Completed");
-      _isSpeaking = false;
-      _overspeedCount = 0;
-    });
+    final recipientEmail = _primaryEmergencyContact?['email']?.toString().trim();
 
-    _flutterTts.setErrorHandler((msg) {
-      print("TTS Error: $msg");
-      _isSpeaking = false;
-    });
+    if (recipientEmail == null || recipientEmail.isEmpty) {
+      print('No primary emergency contact email found');
+      return;
+    }
+
+    final smtpServer = gmail(username, password);
+
+    final message = Message()
+      ..from = Address(username, 'Speed Monitor Alert')
+      ..recipients.add('28.atharvkulkarni@gmail.com')
+      ..subject = '🚨 Overspeed Alert!'
+      ..text = '''
+Overspeed detected!
+Speed: ${_speed.toStringAsFixed(1)} km/h
+Limit: $_speedLimit km/h
+Latitude: ${position.latitude}
+Longitude: ${position.longitude}
+Google Maps:
+https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}
+''';
+
+    try {
+      await send(message, smtpServer);
+      print('Email sent');
+    } catch (e) {
+      print('Email failed: $e');
+    }
+  }
+
+  Future<void> _sendOverspeedToWebhook(Position position) async {
+    final url = Uri.parse(
+      "https://n8nworkflownode3.app.n8n.cloud/webhook/safety-alert",
+    );
+
+    try {
+      await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "eventType": "overspeed",
+          "userId": FirebaseAuth.instance.currentUser?.uid ?? "unknown",
+          "overspeedCount": _overspeedCount,
+          "speed": _speed,
+          "limit": _speedLimit,
+          "latitude": position.latitude,
+          "longitude": position.longitude,
+          "tripId": _currentTripId ?? "noTrip",
+          "contactName": _primaryEmergencyContact?['name']?.toString().trim() ?? "",
+          "contactPhone": _primaryEmergencyContact?['phone']?.toString().trim() ?? "",
+          "contactEmail": _primaryEmergencyContact?['email']?.toString().trim() ?? "",
+        }),
+      );
+
+      print("Webhook contact email: ${_primaryEmergencyContact?['email']}");
+      print("Webhook contact phone: ${_primaryEmergencyContact?['phone']}");
+      print("Webhook contact name: ${_primaryEmergencyContact?['name']}");
+
+      print("✅ Overspeed webhook sent successfully");
+    } catch (e) {
+      print("❌ Overspeed webhook error: $e");
+    }
+  }
+
+  Future<void> _triggerContinuousOverspeedWarning() async {
+    if (_isSpeaking) return;
+
+    _isSpeaking = true;
+
+    print("🔥 VOICE ALERT TRIGGERED 🔥");
+
+    await _flutterTts.stop();
+    await _flutterTts.speak(
+      "Warning. You are continuously exceeding the speed limit.",
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color primaryText = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    final Color primaryText =
+        Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
     final Color secondaryText =
     (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white)
         .withOpacity(0.68);
@@ -388,8 +1038,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 4),
-
-                /// HEADER
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                   decoration: BoxDecoration(
@@ -487,10 +1135,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
-                /// MAP CARD
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -544,7 +1189,9 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                           const Spacer(),
                           _TopInfoPill(
                             icon: Icons.speed_rounded,
-                            label: "Limit ${_speedLimit?.toStringAsFixed(0) ?? "--"} km/h",
+                            label: _speedLimit == null
+                                ? "Limit ${_speedLimitDisplayText()}"
+                                : "Limit ${_speedLimitDisplayText()} km/h",
                             textColor: _speedLimit != null && _speed > _speedLimit!
                                 ? Colors.redAccent
                                 : primaryText,
@@ -561,6 +1208,15 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Source: $_speedLimitSource | Road: $_roadTypeLabel",
+                        style: TextStyle(
+                          color: secondaryText,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                       const SizedBox(height: 14),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(22),
@@ -570,7 +1226,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             children: [
                               FlutterMap(
                                 mapController: _mapController,
-                                options: MapOptions(
+                                options: const MapOptions(
                                   initialCenter: LatLng(18.5204, 73.8567),
                                   initialZoom: 16,
                                 ),
@@ -645,16 +1301,16 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
-                /// SPEED METER (kept logic same, only surrounding section spacing preserved)
                 TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 0, end: _speed),
                   duration: const Duration(milliseconds: 200),
                   builder: (context, animatedValue, child) {
                     double progress = animatedValue / 120;
                     progress = progress.clamp(0.0, 1.0);
+
+                    final bool isOverLimit =
+                        _speedLimit != null && animatedValue > _speedLimit!;
 
                     return Stack(
                       alignment: Alignment.center,
@@ -666,7 +1322,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: animatedValue > 60
+                                color: isOverLimit
                                     ? Colors.redAccent.withOpacity(0.08)
                                     : Colors.blueAccent.withOpacity(0.10),
                                 blurRadius: 40,
@@ -683,7 +1339,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             strokeWidth: 10,
                             backgroundColor: Colors.white12,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              animatedValue > 60 ? Colors.redAccent : Colors.blueAccent,
+                              isOverLimit ? Colors.redAccent : Colors.blueAccent,
                             ),
                           ),
                         ),
@@ -699,7 +1355,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: animatedValue > 60
+                                color: isOverLimit
                                     ? Colors.redAccent.withOpacity(0.6)
                                     : Colors.blueAccent.withOpacity(0.5),
                                 blurRadius: 30,
@@ -738,10 +1394,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     );
                   },
                 ),
-
                 const SizedBox(height: 26),
-
-                /// STATS
                 Row(
                   children: [
                     Expanded(
@@ -772,21 +1425,21 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 22),
-
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     setState(() {
                       _speed += 10;
                     });
 
-                    if (_speedLimit != null && _speedLimit != null && _speed > _speedLimit!!) {
+                    final currentLimit = _speedLimit;
+
+                    if (currentLimit != null && _speed > currentLimit) {
                       _overspeedCount++;
 
                       print("Overspeed Count (TEST): $_overspeedCount");
 
-                      _sendOverspeedToWebhook(
+                      await _sendOverspeedToWebhook(
                         Position(
                           longitude: _lastPosition?.longitude ?? 0,
                           latitude: _lastPosition?.latitude ?? 0,
@@ -802,7 +1455,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                       );
 
                       if (_overspeedCount == 5 && !_isSpeaking) {
-                        _triggerContinuousOverspeedWarning();
+                        await _triggerContinuousOverspeedWarning();
                       }
                     }
                   },
@@ -816,29 +1469,27 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
                       if (_speed < 0) _speed = 0;
                     });
 
-                    if (_speed < _speedLimit! - 5) {
+                    final currentLimit = _speedLimit;
+                    if (currentLimit != null && _speed < currentLimit - 5) {
                       _alertSent = false;
                     }
                   },
                   child: const Text("Decrease Speed (Test)"),
                 ),
-
                 const SizedBox(height: 26),
-
-                /// START / STOP BUTTON
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       setState(() {
                         _isTracking = !_isTracking;
                       });
 
                       if (_isTracking) {
-                        _createNewTrip();
-                        _startTracking();
+                        await _createNewTrip();
+                        await _startTracking();
                       } else {
-                        _endCurrentTrip();
+                        await _endCurrentTrip();
                         _stopTracking();
                       }
                     },
@@ -882,74 +1533,6 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _sendOverspeedEmail(Position position) async {
-    String username = 'atharv21.novagenx@gmail.com';
-    String password = 'kzpmxlhlxcrnvhxo';
-
-    final smtpServer = gmail(username, password);
-
-    final message = Message()
-      ..from = Address(username, 'Speed Monitor Alert')
-      ..recipients.add('28.atharvkulkarni@gmail.com')
-      ..subject = '🚨 Overspeed Alert!'
-      ..text = '''
-            Overspeed detected!
-            Speed: ${_speed.toStringAsFixed(1)} km/h
-            Limit: $_speedLimit km/h
-            Latitude: ${position.latitude}
-            Longitude: ${position.longitude}
-            Google Maps:
-            https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}
-''';
-
-    try {
-      await send(message, smtpServer);
-      print('Email sent');
-    } catch (e) {
-      print('Email failed: $e');
-    }
-  }
-
-  Future<void> _sendOverspeedToWebhook(Position position) async {
-    final url = Uri.parse(
-      "https://novanode3.app.n8n.cloud/webhook/overspeed",
-    );
-
-    try {
-      await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "userId": FirebaseAuth.instance.currentUser?.uid ?? "unknown",
-          "overspeedCount": _overspeedCount,
-          "speed": _speed,
-          "limit": _speedLimit,
-          "latitude": position.latitude,
-          "longitude": position.longitude,
-          "tripId": _currentTripId ?? "noTrip",
-        }),
-      );
-
-      print("Webhook sent successfully");
-    } catch (e) {
-      print("Webhook error: $e");
-    }
-  }
-
-  Future<void> _triggerContinuousOverspeedWarning() async {
-    if (_isSpeaking) return;
-
-    _isSpeaking = true;
-
-    print("🔥 VOICE ALERT TRIGGERED 🔥");
-
-    await _flutterTts.stop();
-
-    await _flutterTts.speak(
-      "Warning. You are continuously exceeding the speed limit.",
     );
   }
 }
@@ -1015,7 +1598,8 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color primaryText = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
+    final Color primaryText =
+        Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
     final Color secondaryText =
     (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white)
         .withOpacity(0.65);
@@ -1098,10 +1682,6 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
-
-////////////////////////////////////////////////////////////
-/// MAIN SCREEN WITH BOTTOM NAVIGATION
-////////////////////////////////////////////////////////////
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});

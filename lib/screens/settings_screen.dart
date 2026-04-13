@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
+import 'emergency_contacts_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -11,6 +13,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+
+
   bool _appNotificationEnabled = true;
   bool _callingAlertEnabled = true;
 
@@ -23,6 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
+    if (!mounted) return;
+
     setState(() {
       _appNotificationEnabled = prefs.getBool('appNotification') ?? true;
       _callingAlertEnabled = prefs.getBool('callingAlert') ?? true;
@@ -33,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('appNotification', value);
 
+    if (!mounted) return;
     setState(() {
       _appNotificationEnabled = value;
     });
@@ -42,9 +49,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('callingAlert', value);
 
+    if (!mounted) return;
     setState(() {
       _callingAlertEnabled = value;
     });
+  }
+
+  Future<String> _getEmergencyContactSubtitle() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 'No emergency contact added';
+
+    try {
+      final contactsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('emergency_contacts');
+
+      final primarySnapshot = await contactsRef
+          .where('isPrimary', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (primarySnapshot.docs.isNotEmpty) {
+        final data = primarySnapshot.docs.first.data();
+        final name = data['name']?.toString().trim() ?? '';
+        final phone = data['phone']?.toString().trim() ?? '';
+
+        if (name.isNotEmpty && phone.isNotEmpty) {
+          return '$name • $phone';
+        }
+        if (name.isNotEmpty) {
+          return name;
+        }
+        if (phone.isNotEmpty) {
+          return phone;
+        }
+        return 'Primary contact added';
+      }
+
+      return 'No emergency contact added';
+    } catch (e) {
+      return 'No emergency contact added';
+    }
   }
 
   Future<void> _updateDarkMode(bool value) async {
@@ -85,6 +131,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Widget _buildDialogTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: const TextStyle(color: Color(0xFFB2BDD0)),
+        hintStyle: const TextStyle(color: Color(0xFF6B7280)),
+        filled: true,
+        fillColor: const Color(0xFF111C35),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF22304D)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF3B82F6)),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -142,11 +226,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: _updateCallingAlert,
                       ),
                       _buildDivider(),
-                      _buildInfoRow(
-                        icon: Icons.phone_outlined,
-                        title: "Emergency Contact",
-                        subtitle: "+1 (555) 123-4567",
-                        onTap: () {},
+                      FutureBuilder<String>(
+                        future: _getEmergencyContactSubtitle(),
+                        builder: (context, snapshot) {
+                          return _buildInfoRow(
+                            icon: Icons.phone_outlined,
+                            title: "Emergency Contact",
+                            subtitle: snapshot.data ?? 'Loading...',
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const EmergencyContactsScreen(),
+                                ),
+                              );
+
+                              if (mounted) {
+                                setState(() {});
+                              }
+                            },
+                          );
+                        },
                       ),
                     ],
                   ),

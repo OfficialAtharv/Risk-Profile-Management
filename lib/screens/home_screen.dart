@@ -42,10 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
   Future<void> _sendOverspeedToN8n(double speed) async {
-    print("CALLING N8N FUNCTION");
-
     final url = Uri.parse(
-      'https://atharvnova.app.n8n.cloud/webhook/overspeed-alert',
+      'https://n8nworkflownode3.app.n8n.cloud/webhook/safety-alert',
     );
 
     try {
@@ -53,8 +51,14 @@ class _HomeScreenState extends State<HomeScreen> {
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'eventType': 'overspeed',
+          'userId': 'test-user',
+          'overspeedCount': 5,
           'speed': speed,
-          'alert': 'Overspeed detected',
+          'limit': speedLimit,
+          'latitude': 0,
+          'longitude': 0,
+          'tripId': 'test-trip',
         }),
       );
 
