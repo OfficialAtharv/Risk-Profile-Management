@@ -936,7 +936,7 @@ out tags center;
 
     final message = Message()
       ..from = Address(username, 'Speed Monitor Alert')
-      ..recipients.add('28.atharvkulkarni@gmail.com')
+      ..recipients.add(recipientEmail)
       ..subject = '🚨 Overspeed Alert!'
       ..text = '''
 Overspeed detected!
@@ -957,10 +957,15 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
   }
 
   Future<void> _sendOverspeedToWebhook(Position position) async {
-    // final url = Uri.parse(
-    //   "https://n8nworkflownode3.app.n8n.cloud/webhook/safety-alert",
-    // );
-// this is gonna change
+    if (_primaryEmergencyContact == null) {
+      print("⚠️ No emergency contact loaded yet. Skipping webhook.");
+      return;
+    }
+
+    final url = Uri.parse(
+      "https://virenss.app.n8n.cloud/webhook/safety-alert",
+    );
+
     try {
       await http.post(
         url,
@@ -974,22 +979,18 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
           "latitude": position.latitude,
           "longitude": position.longitude,
           "tripId": _currentTripId ?? "noTrip",
-          "contactName": _primaryEmergencyContact?['name']?.toString().trim() ?? "",
-          "contactPhone": _primaryEmergencyContact?['phone']?.toString().trim() ?? "",
-          "contactEmail": _primaryEmergencyContact?['email']?.toString().trim() ?? "",
+          "contactName": _primaryEmergencyContact!['name'] ?? "",
+          "contactPhone": _primaryEmergencyContact!['phone'] ?? "",
+          "contactEmail": _primaryEmergencyContact!['email'] ?? "",
         }),
       );
-
-      print("Webhook contact email: ${_primaryEmergencyContact?['email']}");
-      print("Webhook contact phone: ${_primaryEmergencyContact?['phone']}");
-      print("Webhook contact name: ${_primaryEmergencyContact?['name']}");
-
+      await _sendOverspeedEmail(position);
       print("✅ Overspeed webhook sent successfully");
     } catch (e) {
       print("❌ Overspeed webhook error: $e");
     }
-  }
 
+  }
   Future<void> _triggerContinuousOverspeedWarning() async {
     if (_isSpeaking) return;
 
@@ -1425,109 +1426,7 @@ https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.
                     ),
                   ],
                 ),
-                const SizedBox(height: 22),
-                ElevatedButton(
-                  onPressed: () async {
-                    setState(() {
-                      _speed += 10;
-                    });
-
-                    final currentLimit = _speedLimit;
-
-                    if (currentLimit != null && _speed > currentLimit) {
-                      _overspeedCount++;
-
-                      print("Overspeed Count (TEST): $_overspeedCount");
-
-                      await _sendOverspeedToWebhook(
-                        Position(
-                          longitude: _lastPosition?.longitude ?? 0,
-                          latitude: _lastPosition?.latitude ?? 0,
-                          timestamp: DateTime.now(),
-                          accuracy: 1,
-                          altitude: 0,
-                          altitudeAccuracy: 1,
-                          heading: 0,
-                          headingAccuracy: 1,
-                          speed: _speed / 3.6,
-                          speedAccuracy: 1,
-                        ),
-                      );
-
-                      if (_overspeedCount == 5 && !_isSpeaking) {
-                        await _triggerContinuousOverspeedWarning();
-                      }
-                    }
-                  },
-                  child: const Text("Increase Speed (Test)"),
-                ),
-                const SizedBox(height: 14),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _speed -= 20;
-                      if (_speed < 0) _speed = 0;
-                    });
-
-                    final currentLimit = _speedLimit;
-                    if (currentLimit != null && _speed < currentLimit - 5) {
-                      _alertSent = false;
-                    }
-                  },
-                  child: const Text("Decrease Speed (Test)"),
-                ),
                 const SizedBox(height: 26),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: GestureDetector(
-                    onTap: () async {
-                      setState(() {
-                        _isTracking = !_isTracking;
-                      });
-
-                      if (_isTracking) {
-                        await _createNewTrip();
-                        await _startTracking();
-                      } else {
-                        await _endCurrentTrip();
-                        _stopTracking();
-                      }
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
-                        gradient: LinearGradient(
-                          colors: _isTracking
-                              ? const [Color(0xFFFF5A5F), Color(0xFFFF7A59)]
-                              : const [Color(0xFF4D8DFF), Color(0xFF2F6BFF)],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _isTracking
-                                ? const Color(0xFFFF5A5F).withOpacity(0.35)
-                                : const Color(0xFF2F6BFF).withOpacity(0.35),
-                            blurRadius: 24,
-                            spreadRadius: 2,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        _isTracking ? "Stop Trip" : "Start Trip",
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
