@@ -124,7 +124,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   String _speedLimitSource = "loading";
   String _roadTypeLabel = "--";
   bool _isFetchingSpeedLimit = false;
-
+  List<double> _speedBuffer = [];
   bool _alertSent = false;
   double _totalDistance = 0.0;
   Position? _lastPosition;
@@ -134,7 +134,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   int _overspeedCount = 0;
   final FlutterTts _flutterTts = FlutterTts();
   bool _isSpeaking = false;
-
+  DateTime? lastBelowSpeedTime;
   StreamSubscription<Position>? _positionStream;
   StreamSubscription<Position>? _previewPositionStream;
   DateTime? _lastSpeedLimitFetch;
@@ -163,6 +163,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     _initTTS();
     _startPreviewLocationUpdates();
     _loadPrimaryEmergencyContact();
+    _startTracking();
     _flutterTts.setCompletionHandler(() {
       print("Speech Completed");
       _isSpeaking = false;
@@ -173,6 +174,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
       print("TTS Error: $msg");
       _isSpeaking = false;
     });
+
   }
 
   Future<void> _loadPrimaryEmergencyContact() async {
@@ -262,7 +264,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         distanceFilter: 5,
       ),
     ).listen((Position position) async {
-      if (position.accuracy > 35) return;
+      if (position.accuracy > 100) return;
 
       if (mounted) {
         setState(() {
@@ -280,6 +282,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
   }
 
   Future<void> _startTracking() async {
+    _isTracking = true;
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -308,7 +311,7 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         distanceFilter: 1,
       ),
     ).listen((Position position) async {
-      if (position.accuracy > 35) return;
+      if (position.accuracy > 100) return;
       if (!_isTracking) return;
 
       if (_lastPosition != null) {
@@ -328,15 +331,43 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
         17,
       );
 
-      double speedKmh = position.speed * 3.6;
-      if (speedKmh < 3) {
+      double rawSpeed = position.speed * 3.6;
+
+// ❌ Ignore unrealistic spikes
+      if (rawSpeed > 150) return;
+
+// ✅ Add to buffer
+      if (rawSpeed > 0.5) {
+        _speedBuffer.add(rawSpeed);
+      }
+
+// Keep last 5 values only
+      if (_speedBuffer.length > 5) {
+        _speedBuffer.removeAt(0);
+      }
+
+// ✅ Calculate average (smooth speed)
+      double speedKmh = 0;
+
+      if (_speedBuffer.isNotEmpty) {
+        speedKmh =
+            _speedBuffer.reduce((a, b) => a + b) / _speedBuffer.length;
+      }
+
+// ✅ Handle very low speeds
+      if (speedKmh < 1) {
         speedKmh = 0;
+      }
+      if (speedKmh == 0) {
+        _speedBuffer.clear();
       }
 
       setState(() {
         _speed = speedKmh;
       });
-
+      if (_currentTripId == null && speedKmh > 15 && speedKmh < 120) {
+        await _createNewTrip();
+      }
       if (_currentTripId != null) {
         FirestoreService().saveSpeedLog(
           _currentTripId!,
@@ -344,6 +375,22 @@ class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
           position.latitude,
           position.longitude,
         );
+      }
+      // 🛑 AUTO END TRIP
+      if (_currentTripId != null) {
+        if (speedKmh < 5) {
+          lastBelowSpeedTime ??= DateTime.now();
+
+          if (DateTime.now().difference(lastBelowSpeedTime!).inMinutes >= 3) {
+            await _endCurrentTrip();
+            _currentTripId = null;
+            _currentTrip = null;
+            lastBelowSpeedTime = null;
+            _speedBuffer.clear();
+          }
+        } else {
+          lastBelowSpeedTime = null;
+        }
       }
 
       final currentLimit = _speedLimit;
