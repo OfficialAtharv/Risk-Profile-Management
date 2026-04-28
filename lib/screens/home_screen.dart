@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     checkPermission().then((_) {
-      startSpeedTracking();
+      // startSpeedTracking();
     });
   }
 

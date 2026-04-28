@@ -12,12 +12,15 @@ class Trip {
   String? duration;
   double? distance;
   String? endLocation;
+  double? maxSpeed;
+
 
   Trip({
     required this.startTime,
     required this.startLat,
     required this.startLng,
     this.startLocation,
+    this.maxSpeed = 0.0,
   });
 
   void endTrip({
@@ -50,6 +53,7 @@ class Trip {
       'distance': distance,
       'startLocation': startLocation,
       'endLocation': endLocation,
+      'maxSpeed': maxSpeed,
     };
   }
 
@@ -60,6 +64,7 @@ class Trip {
       startLat: map['startLat'],
       startLng: map['startLng'],
       startLocation: map['startLocation'],
+      maxSpeed: (map['maxSpeed'] ?? 0).toDouble(),
     )
       ..endTime = map['endTime'] != null
           ? (map['endTime'] as Timestamp).toDate()
