@@ -297,7 +297,6 @@
       _isTracking = true;
       bool serviceEnabled;
       LocationPermission permission;
-  
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         print("❌ Location service disabled");
@@ -379,24 +378,20 @@
         if (_recentSpeeds.length > 5) {
           _recentSpeeds.removeAt(0);
         }
-        if (_lastDistanceSnapshot == 0 && _totalDistance > 0) {
-          _lastDistanceSnapshot = _totalDistance;
-        }
         bool isConsistentlyMoving =
-            _recentSpeeds.where((s) => s > 15).length >= 3;
-  
-        bool hasMovedEnough =
-            (_totalDistance - _lastDistanceSnapshot) > 20;
-  
+            _recentSpeeds.where((s) => s > 5).length >= 2;
+
+        bool hasMovedEnough = _totalDistance > 30;
+
         if (_currentTripId == null &&
             isConsistentlyMoving &&
             hasMovedEnough &&
             speedKmh < 120){
-  
+
+          await _createNewTrip();
+
           _totalDistance = 0.0;
           _maxSpeed = 0.0;
-  
-          await _createNewTrip();
         }
         if (_currentTripId != null) {
           FirestoreService().saveSpeedLog(
