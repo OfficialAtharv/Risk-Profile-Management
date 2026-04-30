@@ -342,23 +342,12 @@
         );
         double rawSpeed = position.speed * 3.6;
         if (rawSpeed > 150) return;
-        if (rawSpeed > 1.0) {
-          _speedBuffer.add(rawSpeed);
-        }
-        if (_speedBuffer.length > 2) {
-          _speedBuffer.removeAt(0);
-        }
-        double speedKmh = 0;
-        if (_speedBuffer.isNotEmpty) {
-          double avgSpeed =
-              _speedBuffer.reduce((a, b) => a + b) / _speedBuffer.length;
-  
-          // ⚡ Instant response improvement
-          if (rawSpeed > avgSpeed) {
-            speedKmh = rawSpeed;
-          } else {
-            speedKmh = avgSpeed;
-          }
+        double speedKmh = rawSpeed;
+        speedKmh = (_speed * 0.6) + (speedKmh * 0.4);
+        if (speedKmh < 1) speedKmh = 0;
+        // ✅ ADD HERE (anti-flicker fix)
+        if (speedKmh == 0 && _speed > 5) {
+          speedKmh = _speed * 0.8;
         }
         if (speedKmh < 1) {
           speedKmh = 0;
@@ -368,7 +357,6 @@
         }
         setState(() {
           _speed = speedKmh;
-          // ✅ UPDATE MAX SPEED
           if (speedKmh > _maxSpeed) {
             _maxSpeed = speedKmh;
           }
@@ -394,36 +382,38 @@
           _maxSpeed = 0.0;
         }
         if (_currentTripId != null) {
-          FirestoreService().saveSpeedLog(
-  
-            _currentTripId!,
-            speedKmh,
-            position.latitude,
-            position.longitude,
-          );
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(FirebaseAuth.instance.currentUser!.uid)
-              .collection('trips')
-              .doc(_currentTripId)
-              .update({
-            'distance': _totalDistance,
-            'maxSpeed': _maxSpeed,
-          });
+
+          if (_totalDistance >= 5) {
+            FirestoreService().saveSpeedLog(
+              _currentTripId!,
+              speedKmh,
+              position.latitude,
+              position.longitude,
+            );
+
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(FirebaseAuth.instance.currentUser!.uid)
+                .collection('trips')
+                .doc(_currentTripId)
+                .update({
+              'distance': _totalDistance,
+              'maxSpeed': _maxSpeed,
+            });
+          }
         }
         // 🛑 SMART AUTO END TRIP
         if (_currentTripId != null) {
 
-          bool isSlow = speedKmh < 5;
-          bool notMovingMuch = speedKmh < 2;
-  
-          if (isSlow && notMovingMuch) {
+          bool isStationary = speedKmh < 5;
+
+          if (isStationary) {
   
             _stationaryStartTime ??= DateTime.now();
   
             if (DateTime.now()
                 .difference(_stationaryStartTime!)
-                .inMinutes >= 3) {
+                .inSeconds >= 90) {
   
               await _endCurrentTrip();
               _totalDistance = 0.0;
@@ -437,14 +427,12 @@
   
           } else {
             _stationaryStartTime = null;
-            _lastDistanceSnapshot = _totalDistance;
           }
         }
   
         final currentLimit = _speedLimit;
-  
-        bool isActuallyMoving =
-            (_totalDistance - _lastDistanceSnapshot) > 30; // meters
+
+        bool isActuallyMoving = _totalDistance > 30;
   
         if (currentLimit != null &&
             _speed > currentLimit &&
@@ -1431,7 +1419,7 @@
                   const SizedBox(height: 24),
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0, end: _speed),
-                    duration: const Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 80),
                     builder: (context, animatedValue, child) {
                       double progress = animatedValue / 120;
                       progress = progress.clamp(0.0, 1.0);
