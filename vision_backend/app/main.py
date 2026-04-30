@@ -2,13 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.config import settings, UPLOAD_DIR
 from app.routes.vision import router as vision_router
+from app.config import UPLOAD_DIR
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    version="1.0.0",
-)
+app = FastAPI(title="Vision AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,19 +17,9 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
-app.include_router(vision_router, prefix="/api/vision", tags=["Vision AI"])
+app.include_router(vision_router, prefix="/api/vision", tags=["Vision"])
 
 
 @app.get("/")
-def root():
-    return {
-        "message": "Vision AI Backend is running",
-        "status": "ok",
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy",
-    }
+async def root():
+    return {"success": True, "message": "Vision AI Backend is running"}
