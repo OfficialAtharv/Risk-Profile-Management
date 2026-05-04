@@ -1,7 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+
+import '../models/trip_model.dart';
+import '../services/firestore_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,7 +17,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool isTripActive = false;
-
+  final firestoreService = FirestoreService();
+  Trip? currentTrip;
+  String? tripId;
   double currentSpeed = 0.0;
   double speedLimit = 60.0;
 
@@ -28,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     checkPermission().then((_) {
-      // startSpeedTracking();
+      startSpeedTracking();
     });
   }
 
@@ -103,19 +110,45 @@ class _HomeScreenState extends State<HomeScreen> {
       _sendOverspeedToN8n(speed);
     }
   }
-
-  // 🚗 START TRIP
-  void startTrip() {
+  void startTrip() async {
     print("🚗 Trip Started");
+
+    if (currentLat == null || currentLng == null) return;
+
+    currentTrip = Trip(
+      startTime: DateTime.now(),
+      startLat: currentLat!,
+      startLng: currentLng!,
+      startLocation: "Start Location",
+    );
+
+    tripId = await firestoreService.saveTrip(currentTrip!);
 
     setState(() {
       isTripActive = true;
     });
   }
 
-  // 🛑 END TRIP
-  void endTrip() {
+  void endTrip() async {
     print("🛑 Trip Ended");
+
+    if (currentTrip == null || tripId == null) return;
+
+    currentTrip!.endTrip(
+      endTime: DateTime.now(),
+      endLat: currentLat ?? 0,
+      endLng: currentLng ?? 0,
+      duration: "00:10:00",
+      distance: 1000,
+      endLocation: "End Location",
+    );
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(FirebaseAuth.instance.currentUser!.uid)
+        .collection('trips')
+        .doc(tripId)
+        .update(currentTrip!.toMap());
 
     setState(() {
       isTripActive = false;

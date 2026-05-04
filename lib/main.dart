@@ -21,20 +21,20 @@
   import '/screens/route_screen.dart';
   import 'screens/trip_history_screen.dart';
   import 'auth/auth_wrapper.dart';
-  
+
   class _SpeedFetchResult {
     final double speedLimit;
     final String source;
     final String roadType;
-  
+
     const _SpeedFetchResult({
       required this.speedLimit,
       required this.source,
       required this.roadType,
     });
   }
-  
-  
+
+
   class _OverpassRoadCandidate {
     final Map<String, dynamic> element;
     final Map<String, dynamic> tags;
@@ -42,7 +42,7 @@
     final double score;
     final double? parsedMaxspeed;
     final String roadType;
-  
+
     const _OverpassRoadCandidate({
       required this.element,
       required this.tags,
@@ -52,35 +52,35 @@
       required this.roadType,
     });
   }
-  
+
   class _SpeedCacheEntry {
     final _SpeedFetchResult result;
     final DateTime createdAt;
-  
+
     const _SpeedCacheEntry({
       required this.result,
       required this.createdAt,
     });
   }
-  
+
   void main() async {
     WidgetsFlutterBinding.ensureInitialized();
     await Firebase.initializeApp();
     await initializeService();
-  
+
     final prefs = await SharedPreferences.getInstance();
     final isDarkMode = prefs.getBool('isDarkMode') ?? false;
-  
+
     themeNotifier.value = isDarkMode ? ThemeMode.dark : ThemeMode.light;
-  
+
     runApp(const SpeedMonitorApp());
   }
-  
+
   final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
-  
+
   class SpeedMonitorApp extends StatelessWidget {
     const SpeedMonitorApp({super.key});
-  
+
     @override
     Widget build(BuildContext context) {
       return ValueListenableBuilder<ThemeMode>(
@@ -97,33 +97,33 @@
       );
     }
   }
-  
+
   class SpeedMonitorScreen extends StatefulWidget {
     final Function(Trip) onTripCreated;
-  
+
     const SpeedMonitorScreen({
       super.key,
       required this.onTripCreated,
     });
-  
+
     @override
     State<SpeedMonitorScreen> createState() => _SpeedMonitorScreenState();
   }
-  
+
   class _SpeedMonitorScreenState extends State<SpeedMonitorScreen> {
     static const List<String> _overpassEndpoints = [
       "https://overpass.private.coffee/api/interpreter",
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
     ];
-  
+
     static const Duration _overpassTimeout = Duration(seconds: 8);
     static const Duration _speedCacheTtl = Duration(minutes: 2);
     Map<String, dynamic>? _primaryEmergencyContact;
     bool _isLoadingPrimaryContact = false;
     bool _isTracking = false;
     double _speed = 0.0;
-  
+
     double? _speedLimit;
     String _speedLimitSource = "loading";
     String _roadTypeLabel = "--";
@@ -151,23 +151,23 @@
     DateTime? _lastSpeedLimitFetch;
     DateTime? _lastOverspeedIncrementAt;
     Position? _lastSpeedLimitFetchPosition;
-  
+
     final Map<String, _SpeedCacheEntry> _speedLimitCache = {};
     final math.Random _random = math.Random();
     int _speedFetchRequestId = 0;
-  
+
     String _speedLimitDisplayText() {
       if (_isFetchingSpeedLimit && _speedLimit == null) {
         return "Fetching...";
       }
-  
+
       if (_speedLimit == null) {
         return "--";
       }
-  
+
       return _speedLimit!.toStringAsFixed(0);
     }
-  
+
     @override
     void initState() {
       super.initState();
@@ -180,23 +180,23 @@
         _isSpeaking = false;
         _overspeedCount = 0;
       });
-  
+
       _flutterTts.setErrorHandler((msg) {
         print("TTS Error: $msg");
         _isSpeaking = false;
       });
-  
+
     }
-  
+
     Future<void> _loadPrimaryEmergencyContact() async {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
-  
+
       try {
         setState(() {
           _isLoadingPrimaryContact = true;
         });
-  
+
         final snapshot = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -204,9 +204,9 @@
             .where('isPrimary', isEqualTo: true)
             .limit(1)
             .get();
-  
+
         if (!mounted) return;
-  
+
         if (snapshot.docs.isNotEmpty) {
           print('Primary contact loaded: ${snapshot.docs.first.data()}');
           setState(() {
@@ -221,7 +221,7 @@
         }
       } catch (e) {
         print('Failed to load primary emergency contact: $e');
-  
+
         if (!mounted) return;
         setState(() {
           _primaryEmergencyContact = null;
@@ -236,7 +236,7 @@
       _tripTimer?.cancel();
       super.dispose();
     }
-  
+
     Future<void> _initTTS() async {
       await _flutterTts.setLanguage("en-US");
       await _flutterTts.setSpeechRate(0.5);
@@ -246,30 +246,30 @@
       await _flutterTts.setSharedInstance(true);
       await _flutterTts.setQueueMode(1);
     }
-  
+
     Future<void> _startPreviewLocationUpdates() async {
       bool serviceEnabled;
       LocationPermission permission;
-  
+
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         print("❌ Location service disabled");
         return;
       }
-  
+
       permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-  
+
       if (permission == LocationPermission.deniedForever ||
           permission == LocationPermission.denied) {
         print("❌ Location permission denied");
         return;
       }
-  
+
       _previewPositionStream?.cancel();
-  
+
       _previewPositionStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
@@ -277,22 +277,22 @@
         ),
       ).listen((Position position) async {
         if (position.accuracy > 100) return;
-  
+
         if (mounted) {
           setState(() {
             _lastPosition = position;
           });
         }
-  
+
         _mapController.move(
           LatLng(position.latitude, position.longitude),
           17,
         );
-  
+
         await _fetchSpeedLimit(position.latitude, position.longitude);
       });
     }
-  
+
     Future<void> _startTracking() async {
       _isTracking = true;
       bool serviceEnabled;
@@ -345,8 +345,8 @@
         double speedKmh = rawSpeed;
         speedKmh = (_speed * 0.6) + (speedKmh * 0.4);
         if (speedKmh < 1) speedKmh = 0;
-        // ✅ ADD HERE (anti-flicker fix)
-        if (speedKmh == 0 && _speed > 5) {
+        // Only apply anti-flicker when moving
+        if (speedKmh > 0 && speedKmh < 5 && _speed > 5) {
           speedKmh = _speed * 0.8;
         }
         if (speedKmh < 1) {
@@ -370,11 +370,9 @@
             _recentSpeeds.where((s) => s > 5).length >= 2;
 
         bool hasMovedEnough = _totalDistance > 30;
-
-        if (_currentTripId == null &&
-            isConsistentlyMoving &&
-            hasMovedEnough &&
-            speedKmh < 120){
+        print("Speed: $speedKmh | Distance: $_totalDistance | TripId: $_currentTripId");
+        if (_currentTripId == null && speedKmh > 10) {
+          print("🚗 Trip Start Condition Met");
 
           await _createNewTrip();
 
@@ -408,44 +406,44 @@
           bool isStationary = speedKmh < 5;
 
           if (isStationary) {
-  
+
             _stationaryStartTime ??= DateTime.now();
-  
+
             if (DateTime.now()
                 .difference(_stationaryStartTime!)
-                .inSeconds >= 90) {
-  
+                .inSeconds >= 10) {
+
               await _endCurrentTrip();
               _totalDistance = 0.0;
               _maxSpeed = 0.0;
               _currentTripId = null;
               _currentTrip = null;
-  
+
               _stationaryStartTime = null;
               _speedBuffer.clear();
             }
-  
+
           } else {
             _stationaryStartTime = null;
           }
         }
-  
+
         final currentLimit = _speedLimit;
 
         bool isActuallyMoving = _totalDistance > 30;
-  
+
         if (currentLimit != null &&
             _speed > currentLimit &&
             isActuallyMoving) {
           final now = DateTime.now();
-  
+
           if (_lastOverspeedIncrementAt == null ||
               now.difference(_lastOverspeedIncrementAt!).inSeconds >= 10) {
             _overspeedCount++;
             _lastOverspeedIncrementAt = now;
-  
+
             print("Overspeed Count: $_overspeedCount");
-  
+
             await _sendOverspeedToWebhook(
               Position(
                 longitude: _lastPosition?.longitude ?? 0,
@@ -460,7 +458,7 @@
                 speedAccuracy: 1,
               ),
             );
-  
+
             if (_overspeedCount == 5 && !_isSpeaking) {
               await _triggerContinuousOverspeedWarning();
             }
@@ -468,19 +466,19 @@
         } else {
           _alertSent = false;
         }
-  
+
         if (currentLimit != null && speedKmh < currentLimit - 5) {
           _alertSent = false;
         }
       });
     }
-  
+
     Future<void> _fetchSpeedLimit(double lat, double lon) async {
       if (_lastSpeedLimitFetch != null &&
           DateTime.now().difference(_lastSpeedLimitFetch!).inSeconds < 5) {
         return;
       }
-  
+
       if (_lastSpeedLimitFetchPosition != null) {
         final movedDistance = Geolocator.distanceBetween(
           _lastSpeedLimitFetchPosition!.latitude,
@@ -488,12 +486,12 @@
           lat,
           lon,
         );
-  
+
         if (movedDistance < 20) {
           return;
         }
       }
-  
+
       _lastSpeedLimitFetch = DateTime.now();
       _lastSpeedLimitFetchPosition = Position(
         latitude: lat,
@@ -507,9 +505,9 @@
         speed: 0,
         speedAccuracy: 1,
       );
-  
+
       final int requestId = ++_speedFetchRequestId;
-  
+
       if (mounted) {
         setState(() {
           _isFetchingSpeedLimit = true;
@@ -519,10 +517,10 @@
           }
         });
       }
-  
+
       print("➡️ _fetchSpeedLimit called");
       print("➡️ lat=$lat lon=$lon");
-  
+
       try {
         final cached = _getCachedSpeedLimit(lat, lon);
         if (cached != null) {
@@ -535,9 +533,9 @@
           );
           return;
         }
-  
+
         final result = await _fetchSpeedLimitWithFailover(lat, lon);
-  
+
         if (result != null) {
           _storeCachedSpeedLimit(lat, lon, result);
           _applyResolvedSpeedLimit(
@@ -548,7 +546,7 @@
           );
           return;
         }
-  
+
         print("⚠️ All Overpass endpoints failed, using fallback");
         _applyFallbackSpeedLimit(_roadTypeLabel == "--" ? null : _roadTypeLabel);
       } catch (e) {
@@ -556,26 +554,26 @@
         _applyFallbackSpeedLimit(_roadTypeLabel == "--" ? null : _roadTypeLabel);
       }
     }
-  
+
     Future<_SpeedFetchResult?> _fetchSpeedLimitWithFailover(
         double lat,
         double lon,
         ) async {
       final endpoints = [..._overpassEndpoints]..shuffle(_random);
-  
+
       Object? lastError;
-  
+
       for (int round = 0; round < 2; round++) {
         for (final endpoint in endpoints) {
           try {
             print("🌐 Trying Overpass endpoint: $endpoint (round ${round + 1})");
-  
+
             final result = await _fetchFromSingleEndpoint(
               endpoint: endpoint,
               lat: lat,
               lon: lon,
             );
-  
+
             if (result != null) {
               print("✅ Speed limit resolved from $endpoint");
               return result;
@@ -586,23 +584,23 @@
             print("❌ Error: $e");
           }
         }
-  
+
         if (round == 0) {
           await Future.delayed(const Duration(milliseconds: 700));
         }
       }
-  
+
       print("❌ All endpoints exhausted. Last error: $lastError");
       return null;
     }
-  
+
     Future<_SpeedFetchResult?> _fetchFromSingleEndpoint({
       required String endpoint,
       required double lat,
       required double lon,
     }) async {
       final query = _buildOverpassQuery(lat, lon);
-  
+
       final response = await http
           .post(
         Uri.parse(endpoint),
@@ -614,33 +612,33 @@
         body: query,
       )
           .timeout(_overpassTimeout);
-  
+
       if (response.statusCode != 200) {
         throw Exception("Overpass non-200: ${response.statusCode}");
       }
-  
+
       final data = jsonDecode(response.body);
       final elements = (data["elements"] as List?) ?? [];
-  
+
       print("Overpass elements count: ${elements.length}");
-  
+
       if (elements.isEmpty) {
         return null;
       }
-  
+
       final candidate = _chooseBestRoadCandidate(
         lat: lat,
         lon: lon,
         elements: elements,
       );
-  
+
       if (candidate == null) {
         return null;
       }
-  
+
       final double finalLimit;
       final String finalSource;
-  
+
       if (candidate.parsedMaxspeed != null) {
         finalLimit = candidate.parsedMaxspeed!;
         finalSource = "maxspeed";
@@ -648,7 +646,7 @@
         finalLimit = _fallbackByRoadType(candidate.roadType);
         finalSource = "fallback";
       }
-  
+
       print("🎯 CHOSEN ROAD TYPE: ${candidate.roadType}");
       print("🎯 DISTANCE: ${candidate.distanceMeters.toStringAsFixed(1)} m");
       print("🎯 SCORE: ${candidate.score.toStringAsFixed(2)}");
@@ -657,14 +655,14 @@
       );
       print("✅ finalLimit to set: $finalLimit");
       print("✅ source: $finalSource");
-  
+
       return _SpeedFetchResult(
         speedLimit: finalLimit,
         source: finalSource,
         roadType: candidate.roadType,
       );
     }
-  
+
     String _buildOverpassQuery(double lat, double lon) {
       return """
   [out:json][timeout:12];
@@ -679,46 +677,46 @@
   out tags center;
   """;
     }
-  
+
     _OverpassRoadCandidate? _chooseBestRoadCandidate({
       required double lat,
       required double lon,
       required List elements,
     }) {
       _OverpassRoadCandidate? best;
-  
+
       for (final rawElement in elements) {
         if (rawElement is! Map<String, dynamic>) continue;
-  
+
         final tagsRaw = rawElement["tags"];
         if (tagsRaw is! Map) continue;
-  
+
         final tags = Map<String, dynamic>.from(tagsRaw);
         final roadType = tags["highway"]?.toString() ?? "unknown";
-  
+
         final center = rawElement["center"];
         if (center == null || center["lat"] == null || center["lon"] == null) {
           continue;
         }
-  
+
         final roadLat = (center["lat"] as num).toDouble();
         final roadLon = (center["lon"] as num).toDouble();
-  
+
         final distance = Geolocator.distanceBetween(
           lat,
           lon,
           roadLat,
           roadLon,
         );
-  
+
         final parsedMaxspeed = _extractBestMaxSpeed(tags);
-  
+
         final score = _scoreRoadCandidate(
           distanceMeters: distance,
           roadType: roadType,
           hasMaxspeed: parsedMaxspeed != null,
         );
-  
+
         final candidate = _OverpassRoadCandidate(
           element: rawElement,
           tags: tags,
@@ -727,33 +725,33 @@
           parsedMaxspeed: parsedMaxspeed,
           roadType: roadType,
         );
-  
+
         print(
           "Road Tags: $tags | distance=$distance | score=$score | parsedMaxspeed=$parsedMaxspeed",
         );
-  
+
         if (best == null || candidate.score > best.score) {
           best = candidate;
         }
       }
-  
+
       return best;
     }
-  
+
     double _scoreRoadCandidate({
       required double distanceMeters,
       required String roadType,
       required bool hasMaxspeed,
     }) {
       double score = 0;
-  
+
       score += hasMaxspeed ? 1000 : 0;
       score -= distanceMeters * 2.5;
       score += _roadPriorityScore(roadType);
-  
+
       return score;
     }
-  
+
     double _roadPriorityScore(String roadType) {
       switch (roadType) {
         case "motorway":
@@ -778,13 +776,13 @@
           return 0;
       }
     }
-  
+
     double? _extractBestMaxSpeed(Map<String, dynamic> tags) {
       return _parseMaxSpeed(tags["maxspeed"]?.toString()) ??
           _parseMaxSpeed(tags["maxspeed:forward"]?.toString()) ??
           _parseMaxSpeed(tags["maxspeed:backward"]?.toString());
     }
-  
+
     void _applyResolvedSpeedLimit(
         double speedLimit,
         String source,
@@ -795,7 +793,7 @@
         print("⚠️ Ignoring stale speed fetch response");
         return;
       }
-  
+
       if (mounted) {
         setState(() {
           _speedLimit = speedLimit;
@@ -804,29 +802,29 @@
           _isFetchingSpeedLimit = false;
         });
       }
-  
+
       print("Updated Speed Limit: $_speedLimit");
     }
-  
+
     String _cacheKey(double lat, double lon) {
       final latBucket = (lat * 1000).round() / 1000;
       final lonBucket = (lon * 1000).round() / 1000;
       return "$latBucket,$lonBucket";
     }
-  
+
     _SpeedFetchResult? _getCachedSpeedLimit(double lat, double lon) {
       final key = _cacheKey(lat, lon);
       final cached = _speedLimitCache[key];
       if (cached == null) return null;
-  
+
       if (DateTime.now().difference(cached.createdAt) > _speedCacheTtl) {
         _speedLimitCache.remove(key);
         return null;
       }
-  
+
       return cached.result;
     }
-  
+
     void _storeCachedSpeedLimit(double lat, double lon, _SpeedFetchResult result) {
       final key = _cacheKey(lat, lon);
       _speedLimitCache[key] = _SpeedCacheEntry(
@@ -834,12 +832,12 @@
         createdAt: DateTime.now(),
       );
     }
-  
+
     double? _parseMaxSpeed(String? raw) {
       if (raw == null || raw.trim().isEmpty) return null;
-  
+
       final value = raw.toLowerCase().trim();
-  
+
       if (value == "signals" ||
           value == "variable" ||
           value == "none" ||
@@ -848,23 +846,23 @@
           value == "walk") {
         return null;
       }
-  
+
       final numberMatch = RegExp(r'(\d+(\.\d+)?)').firstMatch(value);
       if (numberMatch == null) return null;
-  
+
       double parsed = double.tryParse(numberMatch.group(1)!) ?? 0;
-  
+
       if (parsed <= 0) return null;
-  
+
       if (value.contains("mph")) {
         parsed = parsed * 1.60934;
       } else if (value.contains("knots")) {
         parsed = parsed * 1.852;
       }
-  
+
       return parsed > 0 ? parsed : null;
     }
-  
+
     double _fallbackByRoadType(String? roadType) {
       switch (roadType) {
         case "motorway":
@@ -887,15 +885,15 @@
           return 50;
       }
     }
-  
+
     void _applyFallbackSpeedLimit([String? roadType]) {
       final effectiveRoadType =
       roadType == null || roadType == "--" || roadType == "unknown"
           ? (_roadTypeLabel == "--" ? "unknown" : _roadTypeLabel)
           : roadType;
-  
+
       final fallback = _fallbackByRoadType(effectiveRoadType);
-  
+
       if (mounted) {
         setState(() {
           _speedLimit = fallback;
@@ -907,25 +905,25 @@
       print("⚠️ Using fallback speed limit");
       print("Fallback Speed Limit: $_speedLimit");
     }
-  
+
     Future<void> _createNewTrip() async {
       // _totalDistance = 0.0;
       _lastOverspeedIncrementAt = null;
-  
+
       try {
         final position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.bestForNavigation,
         );
-  
+
         print("Initial position fetched: ${position.latitude}, ${position.longitude}");
-  
+
         _lastPosition = position;
-  
+
         final placemarks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
         );
-  
+
         final place = placemarks.first;
         final area = place.subLocality ?? '';
         final city = place.locality ?? '';
@@ -933,7 +931,7 @@
         // ⏱ START TIMER
         _tripStartTime = DateTime.now();
         _tripDuration = Duration.zero;
-  
+
         _tripTimer?.cancel();
         _tripTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           if (_tripStartTime != null) {
@@ -952,16 +950,16 @@
         _lastDistanceSnapshot = 0;
         print("START LOCATION: $startLocationName");
         print("Current user: ${FirebaseAuth.instance.currentUser?.uid}");
-  
+
         _currentTripId = await FirestoreService().saveTrip(_currentTrip!);
         widget.onTripCreated(_currentTrip!);
-  
+
         print("Trip Started with ID: $_currentTripId");
       } catch (e) {
         print("❌ _createNewTrip error: $e");
       }
     }
-  
+
     Future<void> _endCurrentTrip() async {
       print("🔥 _endCurrentTrip CALLED");
       if (_currentTrip == null || _currentTripId == null) return;
@@ -969,33 +967,33 @@
         print("No last position available");
         return;
       }
-  
+
       final position = _lastPosition!;
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         print("User not logged in");
         return;
       }
-  
+
       final endTime = DateTime.now();
       final startTime = _currentTrip!.startTime;
       final difference = endTime.difference(startTime);
-  
+
       final formattedDuration =
           "${difference.inHours.toString().padLeft(2, '0')}:"
           "${(difference.inMinutes % 60).toString().padLeft(2, '0')}:"
           "${(difference.inSeconds % 60).toString().padLeft(2, '0')}";
-  
+
       final placemarks = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
       );
-  
+
       final place = placemarks.first;
       final area = place.subLocality ?? '';
       final city = place.locality ?? '';
       final endLocationName = area.isNotEmpty ? "$area, $city" : city;
-  
+
       _currentTrip!.endTrip(
         endTime: endTime,
         endLat: position.latitude,
@@ -1024,30 +1022,30 @@
         'endLocation': endLocationName,
         'maxSpeed': _maxSpeed,
       });
-  
+
       print("Trip updated successfully: $_currentTripId");
     }
-  
+
     void _stopTracking() {
       _positionStream?.cancel();
       setState(() {
         _speed = 0;
       });
     }
-  
+
     Future<void> _sendOverspeedEmail(Position position) async {
       String username = 'atharv21.novagenx@gmail.com';
       String password = 'kzpmxlhlxcrnvhxo';
-  
+
       final recipientEmail = _primaryEmergencyContact?['email']?.toString().trim();
-  
+
       if (recipientEmail == null || recipientEmail.isEmpty) {
         print('No primary emergency contact email found');
         return;
       }
-  
+
       final smtpServer = gmail(username, password);
-  
+
       final message = Message()
         ..from = Address(username, 'Speed Monitor Alert')
         ..recipients.add(recipientEmail)
@@ -1061,7 +1059,7 @@
   Google Maps:
   https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}
   ''';
-  
+
       try {
         await send(message, smtpServer);
         print('Email sent');
@@ -1069,17 +1067,17 @@
         print('Email failed: $e');
       }
     }
-  
+
     Future<void> _sendOverspeedToWebhook(Position position) async {
       if (_primaryEmergencyContact == null) {
         print("⚠️ No emergency contact loaded yet. Skipping webhook.");
         return;
       }
-  
+
       final url = Uri.parse(
         "https://virenss.app.n8n.cloud/webhook/safety-alert",
       );
-  
+
       try {
         await http.post(
           url,
@@ -1103,21 +1101,21 @@
       } catch (e) {
         print("❌ Overspeed webhook error: $e");
       }
-  
+
     }
     Future<void> _triggerContinuousOverspeedWarning() async {
       if (_isSpeaking) return;
-  
+
       _isSpeaking = true;
-  
+
       print("🔥 VOICE ALERT TRIGGERED 🔥");
-  
+
       await _flutterTts.stop();
       await _flutterTts.speak(
         "Warning. You are continuously exceeding the speed limit.",
       );
     }
-  
+
     @override
     Widget build(BuildContext context) {
       final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1126,7 +1124,7 @@
       final Color secondaryText =
       (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white)
           .withOpacity(0.68);
-  
+
       return Scaffold(
         body: Container(
           width: double.infinity,
@@ -1423,10 +1421,10 @@
                     builder: (context, animatedValue, child) {
                       double progress = animatedValue / 120;
                       progress = progress.clamp(0.0, 1.0);
-  
+
                       final bool isOverLimit =
                           _speedLimit != null && animatedValue > _speedLimit!;
-  
+
                       return Stack(
                         alignment: Alignment.center,
                         children: [
@@ -1550,14 +1548,14 @@
       );
     }
   }
-  
+
   class _TopInfoPill extends StatelessWidget {
     final IconData icon;
     final String label;
     final Color textColor;
     final Color backgroundColor;
     final Color iconColor;
-  
+
     const _TopInfoPill({
       required this.icon,
       required this.label,
@@ -1565,7 +1563,7 @@
       required this.backgroundColor,
       required this.iconColor,
     });
-  
+
     @override
     Widget build(BuildContext context) {
       return Container(
@@ -1595,20 +1593,20 @@
       );
     }
   }
-  
+
   class _StatCard extends StatelessWidget {
     final String title;
     final String value;
     final String unit;
     final IconData icon;
-  
+
     const _StatCard({
       required this.title,
       required this.value,
       required this.unit,
       required this.icon,
     });
-  
+
     @override
     Widget build(BuildContext context) {
       final bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1617,7 +1615,7 @@
       final Color secondaryText =
       (Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white)
           .withOpacity(0.65);
-  
+
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         decoration: BoxDecoration(
@@ -1696,22 +1694,22 @@
       );
     }
   }
-  
+
   class MainScreen extends StatefulWidget {
     const MainScreen({super.key});
-  
+
     @override
     State<MainScreen> createState() => _MainScreenState();
   }
-  
+
   class _MainScreenState extends State<MainScreen> {
     List<Trip> _tripHistory = [];
     int _selectedIndex = 0;
-  
+
     @override
     Widget build(BuildContext context) {
       final bool isDark = Theme.of(context).brightness == Brightness.dark;
-  
+
       return Scaffold(
         body: IndexedStack(
           index: _selectedIndex,

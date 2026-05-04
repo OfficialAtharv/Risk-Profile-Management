@@ -72,8 +72,9 @@ class Trip {
       ..endLat = map['endLat']
       ..endLng = map['endLng']
       ..endLocation = map['endLocation']
-      ..duration = map['duration']
-      ..distance = map['distance'];
+      ..duration = map['duration'] ?? "00:00:00"
+      ..maxSpeed = (map['maxSpeed'] ?? 0).toDouble();
+
 
   }
 }
