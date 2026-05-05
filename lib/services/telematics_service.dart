@@ -3,18 +3,21 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-class TelematicsService {
-  // For Android physical phone, use your PC LAN IP.
-  // Example: http://192.168.1.10:8001
-  static const String baseUrl = 'http://127.0.0.1:8001';
-  static const String analyzeUrl = '$baseUrl/api/telematics/analyze';
+import '../config/api_config.dart';
 
+class TelematicsService {
   static Future<Map<String, dynamic>> analyzeTelematicsFile(File file) async {
     try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse(analyzeUrl),
-      );
+      final uri = Uri.parse(ApiConfig.telematicsAnalyze);
+
+      print('========== TELEMATICS REQUEST ==========');
+      print('URL: $uri');
+      print('FILE: ${file.path}');
+      print('EXISTS: ${await file.exists()}');
+      print('SIZE: ${await file.length()} bytes');
+      print('=======================================');
+
+      final request = http.MultipartRequest('POST', uri);
 
       request.files.add(
         await http.MultipartFile.fromPath(
@@ -23,18 +26,63 @@ class TelematicsService {
         ),
       );
 
-      final streamedResponse = await request.send();
+      final streamedResponse = await request
+          .send()
+          .timeout(const Duration(seconds: 120));
+
       final response = await http.Response.fromStream(streamedResponse);
 
-      final decoded = jsonDecode(response.body);
+      print('========== TELEMATICS RESPONSE ==========');
+      print('STATUS: ${response.statusCode}');
+      print('BODY: ${response.body}');
+      print('========================================');
 
-      if (response.statusCode == 200) {
-        return decoded;
-      } else {
-        throw Exception(decoded['detail'] ?? 'Telematics analysis failed');
+      dynamic decoded;
+
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {
+        return {
+          'success': false,
+          'error': 'Invalid backend response: ${response.body}',
+        };
       }
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+
+        return {
+          'success': true,
+          'data': decoded,
+        };
+      }
+
+      return {
+        'success': false,
+        'error': decoded is Map
+            ? decoded['detail']?.toString() ??
+            decoded['message']?.toString() ??
+            'Telematics analysis failed'
+            : 'Telematics analysis failed',
+      };
+    } on SocketException catch (e) {
+      return {
+        'success': false,
+        'error':
+        'Backend not reachable. Start telematics backend on port 8001 and check IP. Details: $e',
+      };
+    } on HttpException catch (e) {
+      return {
+        'success': false,
+        'error': 'HTTP error: $e',
+      };
     } catch (e) {
-      throw Exception('Telematics upload failed: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
     }
   }
 }

@@ -231,9 +231,14 @@
     }
     @override
     void dispose() {
+      if (_currentTripId != null) {
+        _endCurrentTrip(); // 🔥 FIRST
+      }
+
       _positionStream?.cancel();
       _previewPositionStream?.cancel();
       _tripTimer?.cancel();
+
       super.dispose();
     }
 
@@ -327,6 +332,10 @@
             position.latitude,
             position.longitude,
           );
+          print("STEP DISTANCE: $distanceInMeters");
+          print("TOTAL DISTANCE NOW: $_totalDistance");
+          print("TOTAL DISTANCE: $_totalDistance");
+          print("DISTANCE STEP: $distanceInMeters");
           if (distanceInMeters > 3) {
             _totalDistance += distanceInMeters;
           }
@@ -369,36 +378,14 @@
         bool isConsistentlyMoving =
             _recentSpeeds.where((s) => s > 5).length >= 2;
 
-        bool hasMovedEnough = _totalDistance > 30;
+        bool hasMovedEnough = _totalDistance > 5;
         print("Speed: $speedKmh | Distance: $_totalDistance | TripId: $_currentTripId");
         if (_currentTripId == null && speedKmh > 10) {
-          print("🚗 Trip Start Condition Met");
-
           await _createNewTrip();
 
           _totalDistance = 0.0;
           _maxSpeed = 0.0;
-        }
-        if (_currentTripId != null) {
-
-          if (_totalDistance >= 5) {
-            FirestoreService().saveSpeedLog(
-              _currentTripId!,
-              speedKmh,
-              position.latitude,
-              position.longitude,
-            );
-
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(FirebaseAuth.instance.currentUser!.uid)
-                .collection('trips')
-                .doc(_currentTripId)
-                .update({
-              'distance': _totalDistance,
-              'maxSpeed': _maxSpeed,
-            });
-          }
+          _lastPosition = position;
         }
         // 🛑 SMART AUTO END TRIP
         if (_currentTripId != null) {
@@ -430,7 +417,7 @@
 
         final currentLimit = _speedLimit;
 
-        bool isActuallyMoving = _totalDistance > 30;
+        bool isActuallyMoving = _totalDistance > 5;
 
         if (currentLimit != null &&
             _speed > currentLimit &&
@@ -999,7 +986,7 @@
         endLat: position.latitude,
         endLng: position.longitude,
         duration: formattedDuration,
-        distance: _totalDistance,
+        distance: _totalDistance / 1000,
         endLocation: endLocationName,
       );
       _currentTrip!.maxSpeed = _maxSpeed;
@@ -1018,7 +1005,7 @@
         'endLat': position.latitude,
         'endLng': position.longitude,
         'duration': formattedDuration,
-        'distance': _totalDistance,
+        'distance': _totalDistance / 1000,
         'endLocation': endLocationName,
         'maxSpeed': _maxSpeed,
       });

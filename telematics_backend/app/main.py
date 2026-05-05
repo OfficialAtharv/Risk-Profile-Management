@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from telematics_backend.app.routers.telematics import router as telematics_router
+from app.routers.telematics import router as telematics_router
 
 app = FastAPI(title="Telematics Backend")
 

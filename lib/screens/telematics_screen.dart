@@ -13,433 +13,373 @@ class TelematicsScreen extends StatefulWidget {
 }
 
 class _TelematicsScreenState extends State<TelematicsScreen> {
-  File? _selectedFile;
-  String? _fileName;
-  bool _isAnalyzing = false;
-  Map<String, dynamic>? _result;
+  File? selectedFile;
+  bool isLoading = false;
+  Map<String, dynamic>? result;
+  String? error;
 
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
+  Future<void> pickFile() async {
+    final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv', 'xlsx', 'xls'],
-      allowMultiple: false,
     );
 
-    if (result == null || result.files.single.path == null) return;
-
-    setState(() {
-      _selectedFile = File(result.files.single.path!);
-      _fileName = result.files.single.name;
-      _result = null;
-    });
+    if (picked != null && picked.files.single.path != null) {
+      setState(() {
+        selectedFile = File(picked.files.single.path!);
+        result = null;
+        error = null;
+      });
+    }
   }
 
-  Future<void> _analyzeFile() async {
-    if (_selectedFile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select CSV / Excel file first")),
-      );
+  Future<void> analyzeFile() async {
+    if (selectedFile == null) {
+      setState(() {
+        error = 'Please select a CSV / Excel file first.';
+      });
       return;
     }
 
     setState(() {
-      _isAnalyzing = true;
-      _result = null;
+      isLoading = true;
+      error = null;
+      result = null;
     });
 
-    try {
-      final response =
-      await TelematicsService.analyzeTelematicsFile(_selectedFile!);
+    final response =
+    await TelematicsService.analyzeTelematicsFile(selectedFile!);
 
-      setState(() {
-        _result = response;
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    } finally {
-      setState(() {
-        _isAnalyzing = false;
-      });
-    }
+    setState(() {
+      isLoading = false;
+
+      if (response['success'] == true) {
+        result = response;
+      } else {
+        error = response['error']?.toString() ?? 'Something went wrong';
+      }
+    });
   }
 
-  Color _riskColor(String level) {
-    final value = level.toLowerCase();
+  Color getRiskColor(String riskLevel) {
+    final value = riskLevel.toLowerCase();
 
-    if (value.contains("elite")) return Colors.teal;
-    if (value.contains("safe")) return Colors.green;
-    if (value.contains("moderate")) return Colors.orange;
-    if (value.contains("high")) return Colors.deepOrange;
-    if (value.contains("critical")) return Colors.red;
+    if (value.contains('low')) return Colors.green;
+    if (value.contains('moderate')) return Colors.orange;
+    if (value.contains('high')) return Colors.red;
+    if (value.contains('critical')) return Colors.deepPurple;
 
     return Colors.blueGrey;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final riskLevel = _result?["risk_level"]?.toString() ?? "Not Analyzed";
-    final driverScore = _result?["driver_score"]?.toString() ?? "--";
-
-    final summary = _result?["summary"];
-    final conditions = _result?["conditions"];
-    final drivers = _result?["drivers"];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Telematics Analysis"),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _uploadCard(),
-              const SizedBox(height: 18),
-
-              if (_isAnalyzing)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-
-              if (_result != null) ...[
-                _scoreCard(driverScore, riskLevel),
-                const SizedBox(height: 18),
-
-                if (conditions is Map)
-                  _conditionsCard(Map<String, dynamic>.from(conditions)),
-
-                const SizedBox(height: 18),
-
-                if (summary is Map)
-                  _summaryTable(Map<String, dynamic>.from(summary)),
-
-                const SizedBox(height: 18),
-
-                if (drivers is List)
-                  _driverTable(List<Map<String, dynamic>>.from(
-                    drivers.map((e) => Map<String, dynamic>.from(e)),
-                  )),
-
-                const SizedBox(height: 18),
-
-                _recommendationCard(),
-              ],
-            ],
+  Widget infoCard(String title, String value, IconData icon) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _uploadCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              "Upload Telematics File",
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              "Select CSV, XLS or XLSX file to analyze numeric driver risk.",
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 18),
-            OutlinedButton.icon(
-              onPressed: _isAnalyzing ? null : _pickFile,
-              icon: const Icon(Icons.upload_file),
-              label: const Text("Choose File"),
-            ),
-            if (_fileName != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blueGrey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.description),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _fileName!,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 18),
-            ElevatedButton.icon(
-              onPressed: _isAnalyzing ? null : _analyzeFile,
-              icon: const Icon(Icons.analytics),
-              label: Text(_isAnalyzing ? "Analyzing..." : "Analyze File"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _scoreCard(String score, String riskLevel) {
-    final color = _riskColor(riskLevel);
-
-    return Card(
-      elevation: 5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(
-            colors: [
-              color.withOpacity(0.90),
-              color.withOpacity(0.60),
-            ],
-          ),
-        ),
-        child: Column(
-          children: [
-            const Text(
-              "Driver Risk Score",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 19,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              score,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Text(
-                riskLevel,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _conditionsCard(Map<String, dynamic> conditions) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Driving Conditions",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 14),
-            _conditionTile(Icons.traffic, "Traffic",
-                conditions["traffic_condition"]?.toString() ?? "-"),
-            _conditionTile(Icons.route, "Road",
-                conditions["road_condition"]?.toString() ?? "-"),
-            _conditionTile(Icons.cloud, "Weather",
-                conditions["weather_condition"]?.toString() ?? "-"),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _conditionTile(IconData icon, String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Icon(icon, size: 22),
+          Icon(icon, color: Colors.blueAccent),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    color: Colors.black87,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
-          Text(value),
         ],
       ),
     );
   }
 
-  Widget _summaryTable(Map<String, dynamic> summary) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Analysis Summary",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 14),
-            Table(
-              border: TableBorder.all(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              columnWidths: const {
-                0: FlexColumnWidth(1.5),
-                1: FlexColumnWidth(1),
-              },
-              children: summary.entries.map((entry) {
-                return TableRow(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(
-                        _formatKey(entry.key),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(entry.value.toString()),
-                    ),
-                  ],
-                );
-              }).toList(),
-            ),
-          ],
+  Widget buildSummary(Map<String, dynamic> summary) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Trip Summary',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-      ),
+        const SizedBox(height: 12),
+        infoCard('Total Records', '${summary['total_records'] ?? '-'}',
+            Icons.dataset),
+        infoCard('Total Trip Distance',
+            '${summary['total_trip_distance_km'] ?? '-'} km', Icons.route),
+        infoCard('Average Speed', '${summary['average_speed'] ?? '-'} km/h',
+            Icons.speed),
+        infoCard('Maximum Speed', '${summary['maximum_speed'] ?? '-'} km/h',
+            Icons.speed_outlined),
+        infoCard(
+            'Average Speeding',
+            '${summary['average_speeding_percentage'] ?? '-'}%',
+            Icons.warning_amber),
+        infoCard(
+            'Harsh Braking Events',
+            '${summary['total_harsh_braking_events'] ?? '-'}',
+            Icons.car_crash),
+        infoCard(
+            'Harsh Acceleration Events',
+            '${summary['total_harsh_acceleration_events'] ?? '-'}',
+            Icons.trending_up),
+        infoCard('Lane Change Events',
+            '${summary['total_lane_change_events'] ?? '-'}', Icons.alt_route),
+        infoCard('Traffic Score', '${summary['average_traffic_score'] ?? '-'}',
+            Icons.traffic),
+        infoCard(
+            'Road Risk Index',
+            '${summary['average_road_risk_index'] ?? '-'}',
+            Icons.add_road),
+        infoCard(
+            'Weather Risk Index',
+            '${summary['average_weather_risk_index'] ?? '-'}',
+            Icons.cloud),
+        infoCard(
+            'Reaction Delay',
+            '${summary['average_reaction_delay_seconds'] ?? '-'} sec',
+            Icons.timer),
+      ],
     );
   }
 
-  Widget _driverTable(List<Map<String, dynamic>> drivers) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Driver-wise Result",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 14),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text("Driver")),
-                  DataColumn(label: Text("Score")),
-                  DataColumn(label: Text("Risk")),
-                  DataColumn(label: Text("Speeding %")),
-                  DataColumn(label: Text("Brake")),
-                  DataColumn(label: Text("Accel")),
-                  DataColumn(label: Text("Lane")),
-                ],
-                rows: drivers.map((driver) {
-                  return DataRow(
-                    cells: [
-                      DataCell(Text(driver["driver_id"].toString())),
-                      DataCell(Text(driver["driver_score"].toString())),
-                      DataCell(Text(driver["risk_level"].toString())),
-                      DataCell(Text(driver["speeding_percentage"].toString())),
-                      DataCell(Text(driver["harsh_braking_events"].toString())),
-                      DataCell(Text(driver["harsh_acceleration_events"].toString())),
-                      DataCell(Text(driver["lane_change_events"].toString())),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
+  Widget buildConditions(Map<String, dynamic> conditions) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Detected Conditions',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-      ),
+        const SizedBox(height: 12),
+        infoCard('Traffic Condition',
+            '${conditions['traffic_condition'] ?? '-'}', Icons.traffic),
+        infoCard('Road Condition', '${conditions['road_condition'] ?? '-'}',
+            Icons.add_road),
+        infoCard('Weather Condition',
+            '${conditions['weather_condition'] ?? '-'}', Icons.cloud),
+      ],
     );
   }
 
-  Widget _recommendationCard() {
-    final recommendations = _result?["recommendation"];
-
-    if (recommendations == null) return const SizedBox();
-
-    final items = recommendations is List
-        ? recommendations
-        : [recommendations.toString()];
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Recommendations",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  Widget buildRecommendations(List recommendations) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Recommendations',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        ...recommendations.map(
+              (item) => Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 12),
-            ...items.map(
-                  (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(item.toString())),
-                  ],
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.check_circle, color: Colors.blueAccent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.toString(),
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildResult() {
+    if (result == null) return const SizedBox.shrink();
+
+    final riskScore = result!['risk_score'] ?? '-';
+    final driverScore = result!['driver_score'] ?? '-';
+    final riskLevel = result!['risk_level']?.toString() ?? '-';
+
+    final summary = result!['summary'] is Map<String, dynamic>
+        ? result!['summary'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final conditions = result!['conditions'] is Map<String, dynamic>
+        ? result!['conditions'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final recommendations = result!['recommendation'] is List
+        ? result!['recommendation'] as List
+        : [];
+
+    final riskColor = getRiskColor(riskLevel);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: riskColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: riskColor, width: 1.3),
+          ),
+          child: Column(
+            children: [
+              const Text(
+                'Telematics Analysis Result',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '$riskScore',
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: riskColor,
                 ),
               ),
+              const SizedBox(height: 6),
+              Text(
+                riskLevel,
+                style: TextStyle(
+                  fontSize: 22,
+                  color: riskColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Driver Score: $driverScore',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        buildSummary(summary),
+        const SizedBox(height: 24),
+        buildConditions(conditions),
+        const SizedBox(height: 24),
+        buildRecommendations(recommendations),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = selectedFile?.path.split('/').last;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Telematics Analyzer'),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.upload_file,
+                      size: 46, color: Colors.blueAccent),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Upload CSV / Excel Telematics File',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    fileName ?? 'No file selected',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : pickFile,
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('Choose File'),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : analyzeFile,
+                    icon: const Icon(Icons.analytics),
+                    label: const Text('Analyze Telematics'),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 20),
+            if (isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            if (error != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red),
+                ),
+                child: Text(
+                  error!,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            buildResult(),
           ],
         ),
       ),
     );
-  }
-
-  String _formatKey(String key) {
-    return key
-        .replaceAll("_", " ")
-        .split(" ")
-        .map((word) {
-      if (word.isEmpty) return word;
-      return word[0].toUpperCase() + word.substring(1);
-    })
-        .join(" ");
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart';
-import 'main_screen.dart' hide MainScreen;
+import 'main_screen.dart';
 import 'vision_ai_screen.dart';
 import 'telematics_screen.dart';
 

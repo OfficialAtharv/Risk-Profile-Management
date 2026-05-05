@@ -1,33 +1,18 @@
-import 'dart:io';
-
 class ApiConfig {
   ApiConfig._();
 
-  static const bool useNgrok = true;
+  static const String lanIp = '192.168.1.52';
 
-  static const String lanIp = '192.168.0.144';
+  static const String baseUrl = 'https://landmine-womanlike-outrage.ngrok-free.dev';
 
-  static const String ngrokUrl =
-      'https://landmine-womanlike-outrage.ngrok-free.dev';
-
-  static String get baseUrl {
-    if (useNgrok) return ngrokUrl;
-
-    if (Platform.isAndroid) {
-      return 'http://$lanIp:8000';
-    }
-
-    if (Platform.isIOS) {
-      return 'http://localhost:8000';
-    }
-
-    return 'http://127.0.0.1:8000';
-  }
+  static String get telematicsBaseUrl => 'http://127.0.0.1:8001';
 
   static String get visionAnalyze => '$baseUrl/api/vision/analyze';
 
-  static String visionResult(String analysisId) =>
-      '$baseUrl/api/vision/result/$analysisId';
+  static String get telematicsAnalyze =>
+      '$telematicsBaseUrl/api/telematics/analyze';
 
   static String get docs => '$baseUrl/docs';
+
+  static String get telematicsDocs => '$telematicsBaseUrl/docs';
 }
