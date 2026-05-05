@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
-from telematics_backend.app.services.telematics_service import process_telematics_file
+from app.services.telematics_service import process_telematics_file
 
 router = APIRouter(prefix="/api/telematics", tags=["Telematics"])
 

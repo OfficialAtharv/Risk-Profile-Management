@@ -22,6 +22,7 @@ class VisionAiService {
         Uri.parse(ApiConfig.visionAnalyze),
       );
 
+      // ✅ IMPORTANT: backend expects "video"
       request.files.add(
         await http.MultipartFile.fromPath("video", videoFile.path),
       );
@@ -29,7 +30,7 @@ class VisionAiService {
       request.fields["prompt"] = _analysisPrompt;
 
       final streamedResponse =
-      await request.send().timeout(const Duration(seconds: 420));
+      await request.send().timeout(const Duration(minutes: 5));
 
       final response = await http.Response.fromStream(streamedResponse);
 
@@ -54,7 +55,8 @@ class VisionAiService {
     final source = _extractFinalResult(responseData);
 
     final riskScore = _readScore(source["risk_score"]);
-    final riskBand = source["risk_band"]?.toString() ?? "unknown";
+    final riskBand =
+        source["risk_band"]?.toString() ?? "unknown";
 
     return {
       "analysis_id": _findValue(responseData, "analysis_id"),
@@ -65,27 +67,23 @@ class VisionAiService {
       "detected_events": [
         {
           "name": "Harsh Acceleration",
-          "value": source["harsh_acceleration"]?.toString() ?? "not returned",
+          "value": source["harsh_acceleration"]?.toString() ?? "unknown",
         },
         {
           "name": "Harsh Braking",
-          "value": source["harsh_braking"]?.toString() ?? "not returned",
+          "value": source["harsh_braking"]?.toString() ?? "unknown",
         },
         {
           "name": "Over Speeding",
-          "value": source["over_speeding"]?.toString() ??
-              source["speeding"]?.toString() ??
-              "not returned",
+          "value": source["over_speeding"]?.toString() ?? "unknown",
         },
         {
           "name": "Road Condition",
-          "value": source["road_condition"]?.toString() ?? "not returned",
+          "value": source["road_condition"]?.toString() ?? "unknown",
         },
         {
           "name": "Collision Alert",
-          "value": source["collision_alert"]?.toString() ??
-              source["collision_risk"]?.toString() ??
-              "not returned",
+          "value": source["collision_alert"]?.toString() ?? "unknown",
         },
       ],
       "recommendation":

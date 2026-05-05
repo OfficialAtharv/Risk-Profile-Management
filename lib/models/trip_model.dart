@@ -56,8 +56,6 @@ class Trip {
       'maxSpeed': maxSpeed,
     };
   }
-
-
   factory Trip.fromMap(Map<String, dynamic> map) {
     return Trip(
       startTime: (map['startTime'] as Timestamp).toDate(),
@@ -73,8 +71,6 @@ class Trip {
       ..endLng = map['endLng']
       ..endLocation = map['endLocation']
       ..duration = map['duration'] ?? "00:00:00"
-      ..maxSpeed = (map['maxSpeed'] ?? 0).toDouble();
-
-
+      ..distance = (map['distance'] ?? 0).toDouble();
   }
 }

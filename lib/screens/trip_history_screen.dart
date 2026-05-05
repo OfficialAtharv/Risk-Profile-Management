@@ -154,7 +154,9 @@ class _TripCard extends StatelessWidget {
         "${((trip.distance ?? 0) / 1000).toStringAsFixed(1)} km";
 
     final String duration = _formatDurationForCard(trip.duration);
-    final String maxSpeed = "-- km/h";
+    final String maxSpeed = (trip.maxSpeed ?? 0) > 0
+        ? "${trip.maxSpeed!.toStringAsFixed(1)} km/h"
+        : "-- km/h";
 
     final String dateLabel = _getDateLabel(trip.startTime);
     final String timeLabel = DateFormat('h:mm a').format(trip.startTime);
